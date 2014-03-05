@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 )
 
 type ControlPacket interface {
@@ -65,10 +66,8 @@ func bytesToMsgId(bytes []byte) msgId {
 	return msgId(binary.BigEndian.Uint16(bytes))
 }
 
-func PacketOffset(buf []byte) int {
-	l, s := decode(buf[1:])
-	length := int(l) + s + 1
-	return length
+func getType(typeByte []byte) byte {
+	return typeByte[0] >> 4
 }
 
 func New(packetType byte) ControlPacket {
@@ -113,6 +112,7 @@ type FixedHeader struct {
 	Qos             byte
 	Retain          byte
 	remainingLength uint32
+	length          int
 }
 
 func (fh FixedHeader) String() string {
@@ -126,15 +126,11 @@ func (fh *FixedHeader) pack(size uint32) []byte {
 	return header.Bytes()
 }
 
-func (fh *FixedHeader) unpack(header []byte) int {
-	var skip int
-	fh.MessageType = header[0] >> 4
-	fh.Dup = (header[0] >> 3) & 0x01
-	fh.Qos = (header[0] >> 1) & 0x03
-	fh.Retain = header[0] & 0x01
-	fh.remainingLength, skip = decode(header[1:len(header)])
-	skip++
-	return skip
+func (fh *FixedHeader) unpack(header byte) {
+	fh.MessageType = header >> 4
+	fh.Dup = (header >> 3) & 0x01
+	fh.Qos = (header >> 1) & 0x03
+	fh.Retain = header & 0x01
 }
 
 func encodeField(field string) []byte {
@@ -167,22 +163,22 @@ func encode(length uint32) []byte {
 	return encLength
 }
 
-func decode(header []byte) (uint32, int) {
+func decodeLength(src io.Reader) uint32 {
 	var rLength uint32
 	var count int
 	var multiplier uint32 = 1
 	count = 1
-	var digit byte
+	digit := make([]byte, 1)
 	for {
-		digit, header = header[0], header[1:len(header)]
-		rLength += uint32(digit&127) * multiplier
-		if (digit & 128) == 0 {
+		io.ReadFull(src, digit)
+		rLength += uint32(digit[0]&127) * multiplier
+		if (digit[0] & 128) == 0 {
 			break
 		}
 		multiplier *= 128
 		count++
 	}
-	return rLength, count
+	return rLength
 }
 
 func messageType(mType byte) byte {
@@ -240,8 +236,7 @@ func (c *connectPacket) Pack() []byte {
 }
 
 func (c *connectPacket) Unpack(packet []byte) {
-	skip := c.FixedHeader.unpack(packet[:])
-	packet, c.protocolName, _ = decodeField(packet[skip:])
+	packet, c.protocolName, _ = decodeField(packet[c.FixedHeader.length:])
 	c.protocolVersion = packet[0]
 	options := packet[1]
 	c.reservedBit = 1 & options
@@ -303,8 +298,7 @@ func (ca *connackPacket) Pack() []byte {
 }
 
 func (ca *connackPacket) Unpack(packet []byte) {
-	skip := ca.FixedHeader.unpack(packet[:])
-	packet = packet[skip:]
+	packet = packet[ca.FixedHeader.length:]
 	ca.topicNameCompression = packet[0]
 	ca.returnCode = packet[1]
 }
@@ -325,7 +319,6 @@ func (d *disconnectPacket) Pack() []byte {
 }
 
 func (d *disconnectPacket) Unpack(packet []byte) {
-	d.FixedHeader.unpack(packet[:])
 }
 
 //PUBLISH packet
@@ -351,14 +344,15 @@ func (p *publishPacket) Pack() []byte {
 		body = append(body, msgIdToBytes(p.messageId)...)
 	}
 	body = append(body, p.payload...)
+	fmt.Println("Outbound bytes", append(p.FixedHeader.pack(uint32(len(body))), body...))
 	return append(p.FixedHeader.pack(uint32(len(body))), body...)
 }
 
 func (p *publishPacket) Unpack(packet []byte) {
+	fmt.Println(packet)
 	var skip int
-	rLength := p.FixedHeader.unpack(packet[:])
-	packet, p.topicName, skip = decodeField(packet[rLength:])
-	skip += rLength
+	packet, p.topicName, skip = decodeField(packet[p.FixedHeader.length:])
+	skip += p.FixedHeader.length
 	if p.Qos > 0 {
 		p.messageId = bytesToMsgId(packet[:2])
 		p.payload = packet[2:]
@@ -386,8 +380,7 @@ func (pa *pubackPacket) Pack() []byte {
 }
 
 func (pa *pubackPacket) Unpack(packet []byte) {
-	pa.FixedHeader.unpack(packet[:])
-	pa.messageId = bytesToMsgId(packet[2:4])
+	pa.messageId = bytesToMsgId(packet[:2])
 }
 
 //PUBREC packet
@@ -408,8 +401,7 @@ func (pr *pubrecPacket) Pack() []byte {
 }
 
 func (pr *pubrecPacket) Unpack(packet []byte) {
-	pr.FixedHeader.unpack(packet[:])
-	pr.messageId = bytesToMsgId(packet[2:4])
+	pr.messageId = bytesToMsgId(packet[:2])
 }
 
 //PUBREL packet
@@ -430,8 +422,7 @@ func (pr *pubrelPacket) Pack() []byte {
 }
 
 func (pr *pubrelPacket) Unpack(packet []byte) {
-	pr.FixedHeader.unpack(packet[:])
-	pr.messageId = bytesToMsgId(packet[2:4])
+	pr.messageId = bytesToMsgId(packet[:2])
 }
 
 //PUBCOMP packet
@@ -448,12 +439,12 @@ func (pc *pubcompPacket) String() string {
 }
 
 func (pc *pubcompPacket) Pack() []byte {
+	fmt.Println("Outbound bytes", pc.FixedHeader.pack(uint32(2)))
 	return append(pc.FixedHeader.pack(uint32(2)), msgIdToBytes(pc.messageId)...)
 }
 
 func (pc *pubcompPacket) Unpack(packet []byte) {
-	pc.FixedHeader.unpack(packet[:])
-	pc.messageId = bytesToMsgId(packet[2:4])
+	pc.messageId = bytesToMsgId(packet[:2])
 }
 
 //SUBSCRIBE packet
@@ -481,8 +472,6 @@ func (s *subscribePacket) Pack() []byte {
 }
 
 func (s *subscribePacket) Unpack(packet []byte) {
-	skip := s.FixedHeader.unpack(packet[:])
-	packet = packet[skip:]
 	s.messageId = bytesToMsgId(packet[0:2])
 	s.payload = packet[2:]
 	payload := packet[2:]
@@ -516,8 +505,7 @@ func (sa *subackPacket) Pack() []byte {
 }
 
 func (sa *subackPacket) Unpack(packet []byte) {
-	sa.FixedHeader.unpack(packet[:])
-	sa.messageId = bytesToMsgId(packet[2:4])
+	sa.messageId = bytesToMsgId(packet[:2])
 }
 
 //UNSUBSCRIBE packet
@@ -543,8 +531,6 @@ func (u *unsubscribePacket) Pack() []byte {
 }
 
 func (u *unsubscribePacket) Unpack(packet []byte) {
-	skip := u.FixedHeader.unpack(packet[:])
-	packet = packet[skip:]
 	u.messageId = bytesToMsgId(packet[:2])
 	u.payload = packet[2:]
 	payload := packet[2:]
@@ -572,8 +558,7 @@ func (ua *unsubackPacket) Pack() []byte {
 }
 
 func (ua *unsubackPacket) Unpack(packet []byte) {
-	ua.FixedHeader.unpack(packet[:])
-	ua.messageId = bytesToMsgId(packet[2:4])
+	ua.messageId = bytesToMsgId(packet[:2])
 }
 
 //PINGREQ packet
@@ -592,7 +577,6 @@ func (pr *pingreqPacket) Pack() []byte {
 }
 
 func (pr *pingreqPacket) Unpack(packet []byte) {
-	pr.FixedHeader.unpack(packet[:])
 }
 
 //PINGRESP packet
@@ -611,5 +595,4 @@ func (pr *pingrespPacket) Pack() []byte {
 }
 
 func (pr *pingrespPacket) Unpack(packet []byte) {
-	pr.FixedHeader.unpack(packet[:])
 }

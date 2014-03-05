@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 )
 
@@ -20,31 +21,35 @@ func main() {
 		var cph FixedHeader
 		var takeover bool
 		var c *Client
+		typeByte := make([]byte, 1)
 
 		conn, err := ln.Accept()
+		connReader := io.Reader(conn)
 		fmt.Println("New incoming connection", conn.LocalAddr())
 		if err != nil {
 			fmt.Println(err.Error())
 			continue
 		}
-		//read only the first 4 bytes to check for connect and the size of the connect packet
-		header := make([]byte, 4)
-		length, err := conn.Read(header)
-		fmt.Println("read bytes:", length)
-		cph.unpack(header)
+		//read only the first  byte to check for connect
+		io.ReadFull(connReader, typeByte)
+		cph.unpack(typeByte[0])
+		//_, err = conn.Read(typeByte)
+		//fmt.Println("read bytes:", length)
 
 		if cph.MessageType != CONNECT {
 			conn.Close()
 			continue
 		}
 
+		cph.remainingLength = decodeLength(connReader)
+
 		//a buffer to receive the rest of the connect packet, header may have been less than 4 bytes
-		body := make([]byte, cph.remainingLength-(4-uint32(cph.unpack(header))))
-		length, err = conn.Read(body)
-		fmt.Println("read bytes:", length)
+		body := make([]byte, cph.remainingLength)
+		io.ReadFull(connReader, body)
 
 		cp := New(CONNECT).(*connectPacket)
-		cp.Unpack(append(header, body...))
+		cp.FixedHeader = cph
+		cp.Unpack(body)
 		fmt.Println(cp.String())
 		if cp.Validate() {
 			fmt.Println("CONNECT packet validated")
@@ -61,6 +66,7 @@ func main() {
 				c.Lock()
 				c.Stop()
 				c.conn = conn
+				c.connReader = connReader
 				c.Unlock()
 			}()
 		}
@@ -81,7 +87,7 @@ func main() {
 		// }
 
 		if !takeover {
-			c = NewClient(conn, cp.clientIdentifier)
+			c = NewClient(conn, connReader, cp.clientIdentifier)
 			if cp.cleanSession > 0 {
 				c.cleanSession = true
 			}

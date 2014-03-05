@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"sync"
@@ -14,27 +15,27 @@ type Client struct {
 	MessageIds
 	clientId         string
 	conn             net.Conn
+	connReader       io.Reader
 	rootNode         *Node
 	keepAlive        uint
 	connected        bool
 	topicSpace       string
 	outboundMessages chan ControlPacket
-	sendStop         chan bool
-	recvStop         chan bool
+	stop             chan bool
 	lastSeen         time.Time
 	cleanSession     bool
 }
 
-func NewClient(conn net.Conn, clientId string) *Client {
+func NewClient(conn net.Conn, connReader io.Reader, clientId string) *Client {
 	//if !validateClientId(clientId) {
 	//	return nil, errors.New("Invalid Client Id")
 	//}
 	c := &Client{}
 	c.conn = conn
+	c.connReader = connReader
 	c.clientId = clientId
 	// c.subscriptions = list.New()
-	c.sendStop = make(chan bool)
-	c.recvStop = make(chan bool)
+	c.stop = make(chan bool)
 	c.outboundMessages = make(chan ControlPacket)
 	c.rootNode = rootNode
 
@@ -48,8 +49,7 @@ func (c *Client) Remove() {
 }
 
 func (c *Client) Stop() {
-	c.sendStop <- true
-	c.recvStop <- true
+	close(c.stop)
 	c.conn.Close()
 }
 
@@ -102,28 +102,35 @@ func (c *Client) RemoveSubscription(topic string) (bool, error) {
 func (c *Client) Receive() {
 	for {
 		var cph FixedHeader
+		var err error
+		var body []byte
+		var length int
+		typeByte := make([]byte, 1)
 		//var cp ControlPacket
 
-		header := make([]byte, 4)
-		_, err := c.conn.Read(header)
+		length, err = io.ReadFull(c.connReader, typeByte)
 		if err != nil {
 			break
 		}
-		cph.unpack(header)
+		cph.unpack(typeByte[0])
+		fmt.Println("Message type", cph.MessageType)
+		cph.remainingLength = decodeLength(c.connReader)
 
-		body := make([]byte, cph.remainingLength-(4-uint32(cph.unpack(header))))
-		if cph.remainingLength > 2 {
-			_, err = c.conn.Read(body)
+		if cph.remainingLength > 0 {
+			body = make([]byte, cph.remainingLength)
+			length, err = io.ReadFull(c.connReader, body)
 			if err != nil {
 				break
 			}
+			fmt.Println("Read", length, "bytes")
 		}
 
 		switch cph.MessageType {
 		case DISCONNECT:
 			fmt.Println("Received DISCONNECT from", c.clientId)
 			dp := New(DISCONNECT).(*disconnectPacket)
-			dp.Unpack(append(header, body...))
+			dp.FixedHeader = cph
+			dp.Unpack(body)
 			c.Stop()
 			fmt.Println("Stop has returned")
 			if c.cleanSession {
@@ -131,9 +138,10 @@ func (c *Client) Receive() {
 			}
 			break
 		case PUBLISH:
-			fmt.Println("Received PUBLISH from", c.clientId)
+			//fmt.Println("Received PUBLISH from", c.clientId)
 			pp := New(PUBLISH).(*publishPacket)
-			pp.Unpack(append(header, body...))
+			pp.FixedHeader = cph
+			pp.Unpack(body)
 			fmt.Println(pp.String())
 			c.rootNode.DeliverMessage(strings.Split(pp.topicName, "/"), pp)
 			switch pp.Qos {
@@ -148,23 +156,28 @@ func (c *Client) Receive() {
 			}
 		case PUBACK:
 			pa := New(PUBACK).(*pubackPacket)
-			pa.Unpack(append(header, body...))
+			pa.FixedHeader = cph
+			pa.Unpack(body)
 		case PUBREC:
 			pr := New(PUBREC).(*pubrecPacket)
-			pr.Unpack(append(header, body...))
+			pr.FixedHeader = cph
+			pr.Unpack(body)
 		case PUBREL:
 			pr := New(PUBREL).(*pubrelPacket)
-			pr.Unpack(append(header, body...))
+			pr.FixedHeader = cph
+			pr.Unpack(body)
 			pc := New(PUBCOMP).(*pubcompPacket)
 			pc.messageId = pr.messageId
 			c.outboundMessages <- pc
 		case PUBCOMP:
 			pc := New(PUBCOMP).(*pubcompPacket)
-			pc.Unpack(append(header, body...))
+			pc.FixedHeader = cph
+			pc.Unpack(body)
 		case SUBSCRIBE:
 			fmt.Println("Received SUBSCRIBE from", c.clientId)
 			sp := New(SUBSCRIBE).(*subscribePacket)
-			sp.Unpack(append(header, body...))
+			sp.FixedHeader = cph
+			sp.Unpack(body)
 			c.AddSubscription(sp.topics[0], sp.qoss[0])
 			sa := New(SUBACK).(*subackPacket)
 			sa.messageId = sp.messageId
@@ -173,20 +186,19 @@ func (c *Client) Receive() {
 		case UNSUBSCRIBE:
 			fmt.Println("Received UNSUBSCRIBE from", c.clientId)
 			up := New(UNSUBSCRIBE).(*unsubscribePacket)
-			up.Unpack(append(header, body...))
+			up.FixedHeader = cph
+			up.Unpack(body)
 			c.RemoveSubscription(up.topics[0])
 			ua := New(UNSUBACK).(*unsubackPacket)
 			ua.messageId = up.messageId
 			c.outboundMessages <- ua
 		case PINGREQ:
-			preq := New(PINGREQ).(*pingreqPacket)
-			preq.Unpack(append(header, body...))
 			presp := New(PINGRESP).(*pingrespPacket)
 			c.outboundMessages <- presp
 		}
 	}
 	select {
-	case <-c.recvStop:
+	case <-c.stop:
 		fmt.Println("Requested to stop")
 		return
 	default:
@@ -201,7 +213,7 @@ func (c *Client) Send() {
 		case msg := <-c.outboundMessages:
 			fmt.Println("Outbound message on channel", msg.String())
 			c.conn.Write(msg.Pack())
-		case <-c.sendStop:
+		case <-c.stop:
 			fmt.Println("Requested to stop")
 			return
 		}

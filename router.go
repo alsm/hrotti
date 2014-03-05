@@ -10,10 +10,9 @@ var rootNode *Node = NewNode("")
 
 func NewNode(name string) *Node {
 	return &Node{Name: name,
-		HashSub:  make(map[*Client]uint),
-		Sub:      make(map[*Client]uint),
-		Nodes:    make(map[string]*Node),
-		Retained: nil,
+		HashSub: make(map[*Client]uint),
+		Sub:     make(map[*Client]uint),
+		Nodes:   make(map[string]*Node),
 	}
 }
 
@@ -23,7 +22,7 @@ type Node struct {
 	HashSub  map[*Client]uint
 	Sub      map[*Client]uint
 	Nodes    map[string]*Node
-	Retained publishPacket
+	Retained *publishPacket
 }
 
 func (n Node) Print(prefix string) string {
@@ -95,7 +94,7 @@ func (n Node) DeliverMessage(topic []string, message ControlPacket) {
 		}
 	case x == 0:
 		for client, _ := range n.Sub {
-			fmt.Println("Delivering message to", client.clientId)
+			//fmt.Println("Delivering message to", client.clientId)
 			client.outboundMessages <- message
 		}
 		return

@@ -70,21 +70,6 @@ func main() {
 			}()
 		}
 
-		// for cl := clients.List.Front(); cl != nil; cl = cl.Next() {
-		// 	c = cl.Value.(*Client)
-		// 	fmt.Println(cp.clientIdentifier, c.clientId)
-		// 	if cp.clientIdentifier == c.clientId {
-		// 		takeover = true
-		// 		go func() {
-		// 			c.Lock()
-		// 			c.Stop()
-		// 			c.conn = conn
-		// 			c.Unlock()
-		// 		}()
-		// 		break
-		// 	}
-		// }
-
 		if !takeover {
 			c = NewClient(conn, connReader, cp.clientIdentifier)
 			if cp.cleanSession > 0 {

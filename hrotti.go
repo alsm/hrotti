@@ -43,22 +43,21 @@ func main() {
 
 		cph.remainingLength = decodeLength(connReader)
 
-		//a buffer to receive the rest of the connect packet, header may have been less than 4 bytes
+		//a buffer to receive the rest of the connect packet
 		body := make([]byte, cph.remainingLength)
 		io.ReadFull(connReader, body)
 
 		cp := New(CONNECT).(*connectPacket)
 		cp.FixedHeader = cph
 		cp.Unpack(body)
-		fmt.Println(cp.String())
+		//fmt.Println(cp.String())
 		if cp.Validate() {
-			fmt.Println("CONNECT packet validated")
+			//fmt.Println("CONNECT packet validated")
 		}
 
 		ca := New(CONNACK).(*connackPacket)
 		ca.returnCode = CONN_ACCEPTED
 		conn.Write(ca.Pack())
-		fmt.Println("Sent CONNACK")
 
 		if c, ok := clients[cp.clientIdentifier]; ok {
 			takeover = true
@@ -93,8 +92,6 @@ func main() {
 			}
 			clients[cp.clientIdentifier] = c
 		}
-
-		fmt.Println(len(clients))
 
 		go c.Start()
 		//go handleConnection(conn)

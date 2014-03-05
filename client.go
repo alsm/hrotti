@@ -104,25 +104,22 @@ func (c *Client) Receive() {
 		var cph FixedHeader
 		var err error
 		var body []byte
-		var length int
 		typeByte := make([]byte, 1)
 		//var cp ControlPacket
 
-		length, err = io.ReadFull(c.connReader, typeByte)
+		_, err = io.ReadFull(c.connReader, typeByte)
 		if err != nil {
 			break
 		}
 		cph.unpack(typeByte[0])
-		fmt.Println("Message type", cph.MessageType)
 		cph.remainingLength = decodeLength(c.connReader)
 
 		if cph.remainingLength > 0 {
 			body = make([]byte, cph.remainingLength)
-			length, err = io.ReadFull(c.connReader, body)
+			_, err = io.ReadFull(c.connReader, body)
 			if err != nil {
 				break
 			}
-			fmt.Println("Read", length, "bytes")
 		}
 
 		switch cph.MessageType {
@@ -132,7 +129,6 @@ func (c *Client) Receive() {
 			dp.FixedHeader = cph
 			dp.Unpack(body)
 			c.Stop()
-			fmt.Println("Stop has returned")
 			if c.cleanSession {
 				c.Remove()
 			}
@@ -142,7 +138,6 @@ func (c *Client) Receive() {
 			pp := New(PUBLISH).(*publishPacket)
 			pp.FixedHeader = cph
 			pp.Unpack(body)
-			fmt.Println(pp.String())
 			c.rootNode.DeliverMessage(strings.Split(pp.topicName, "/"), pp)
 			switch pp.Qos {
 			case 1:
@@ -199,7 +194,6 @@ func (c *Client) Receive() {
 	}
 	select {
 	case <-c.stop:
-		fmt.Println("Requested to stop")
 		return
 	default:
 		fmt.Println("Error on socket read")
@@ -211,10 +205,8 @@ func (c *Client) Send() {
 	for {
 		select {
 		case msg := <-c.outboundMessages:
-			fmt.Println("Outbound message on channel", msg.String())
 			c.conn.Write(msg.Pack())
 		case <-c.stop:
-			fmt.Println("Requested to stop")
 			return
 		}
 	}

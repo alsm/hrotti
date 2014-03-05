@@ -344,12 +344,10 @@ func (p *publishPacket) Pack() []byte {
 		body = append(body, msgIdToBytes(p.messageId)...)
 	}
 	body = append(body, p.payload...)
-	fmt.Println("Outbound bytes", append(p.FixedHeader.pack(uint32(len(body))), body...))
 	return append(p.FixedHeader.pack(uint32(len(body))), body...)
 }
 
 func (p *publishPacket) Unpack(packet []byte) {
-	fmt.Println(packet)
 	var skip int
 	packet, p.topicName, skip = decodeField(packet[p.FixedHeader.length:])
 	skip += p.FixedHeader.length

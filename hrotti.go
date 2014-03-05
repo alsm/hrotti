@@ -67,6 +67,7 @@ func main() {
 				c.conn = conn
 				c.connReader = connReader
 				c.Unlock()
+				c.Start()
 			}()
 		}
 
@@ -76,9 +77,8 @@ func main() {
 				c.cleanSession = true
 			}
 			clients[cp.clientIdentifier] = c
+			go c.Start()
 		}
-
-		go c.Start()
 		//go handleConnection(conn)
 	}
 }

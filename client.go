@@ -38,6 +38,7 @@ func NewClient(conn net.Conn, connReader io.Reader, clientId string) *Client {
 	c.stop = make(chan bool)
 	c.outboundMessages = make(chan ControlPacket)
 	c.rootNode = rootNode
+	c.connected = true
 
 	return c
 }
@@ -49,8 +50,10 @@ func (c *Client) Remove() {
 }
 
 func (c *Client) Stop() {
+	c.connected = false
 	close(c.stop)
 	c.conn.Close()
+	c.Remove()
 }
 
 func (c *Client) Start() {

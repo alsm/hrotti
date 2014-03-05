@@ -52,7 +52,6 @@ func (n Node) AddSub(client *Client, subscription []string, qos uint, complete c
 		} else {
 			subTopic := subscription[0]
 			if _, ok := n.Nodes[subTopic]; !ok {
-				fmt.Printf("Creating new Node(%s) under %s\n", subTopic, n.Name)
 				n.Nodes[subTopic] = NewNode(subTopic)
 			}
 			go n.Nodes[subTopic].AddSub(client, subscription[1:], qos, complete)
@@ -84,7 +83,9 @@ func (n Node) DeliverMessage(topic []string, message ControlPacket) {
 	n.RLock()
 	defer n.RUnlock()
 	for client, _ := range n.HashSub {
-		client.outboundMessages <- message
+		if client.connected {
+			client.outboundMessages <- message
+		}
 	}
 	switch x := len(topic); {
 	case x > 0:
@@ -95,7 +96,9 @@ func (n Node) DeliverMessage(topic []string, message ControlPacket) {
 	case x == 0:
 		for client, _ := range n.Sub {
 			//fmt.Println("Delivering message to", client.clientId)
-			client.outboundMessages <- message
+			if client.connected {
+				client.outboundMessages <- message
+			}
 		}
 		return
 	}

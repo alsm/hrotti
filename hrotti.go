@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"net"
@@ -21,18 +22,19 @@ func main() {
 		var cph FixedHeader
 		var takeover bool
 		var c *Client
-		typeByte := make([]byte, 1)
+		var typeByte byte
 
 		conn, err := ln.Accept()
-		connReader := io.Reader(conn)
+		bufferedConn := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
 		fmt.Println("New incoming connection", conn.LocalAddr())
 		if err != nil {
 			fmt.Println(err.Error())
 			continue
 		}
 		//read only the first  byte to check for connect
-		io.ReadFull(connReader, typeByte)
-		cph.unpack(typeByte[0])
+		//io.ReadFull(bufferedConn, typeByte)
+		typeByte, _ = bufferedConn.ReadByte()
+		cph.unpack(typeByte)
 		//_, err = conn.Read(typeByte)
 		//fmt.Println("read bytes:", length)
 
@@ -41,11 +43,11 @@ func main() {
 			continue
 		}
 
-		cph.remainingLength = decodeLength(connReader)
+		cph.remainingLength = decodeLength(bufferedConn)
 
 		//a buffer to receive the rest of the connect packet
 		body := make([]byte, cph.remainingLength)
-		io.ReadFull(connReader, body)
+		io.ReadFull(bufferedConn, body)
 
 		cp := New(CONNECT).(*connectPacket)
 		cp.FixedHeader = cph
@@ -65,14 +67,14 @@ func main() {
 				c.Lock()
 				c.Stop()
 				c.conn = conn
-				c.connReader = connReader
+				c.bufferedConn = bufferedConn
 				c.Unlock()
 				c.Start()
 			}()
 		}
 
 		if !takeover {
-			c = NewClient(conn, connReader, cp.clientIdentifier)
+			c = NewClient(conn, bufferedConn, cp.clientIdentifier)
 			if cp.cleanSession > 0 {
 				c.cleanSession = true
 			}

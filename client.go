@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -15,7 +16,7 @@ type Client struct {
 	MessageIds
 	clientId         string
 	conn             net.Conn
-	connReader       io.Reader
+	bufferedConn     *bufio.ReadWriter
 	rootNode         *Node
 	keepAlive        uint
 	connected        bool
@@ -26,13 +27,13 @@ type Client struct {
 	cleanSession     bool
 }
 
-func NewClient(conn net.Conn, connReader io.Reader, clientId string) *Client {
+func NewClient(conn net.Conn, bufferedConn *bufio.ReadWriter, clientId string) *Client {
 	//if !validateClientId(clientId) {
 	//	return nil, errors.New("Invalid Client Id")
 	//}
 	c := &Client{}
 	c.conn = conn
-	c.connReader = connReader
+	c.bufferedConn = bufferedConn
 	c.clientId = clientId
 	// c.subscriptions = list.New()
 	c.stop = make(chan bool)
@@ -107,19 +108,20 @@ func (c *Client) Receive() {
 		var cph FixedHeader
 		var err error
 		var body []byte
-		typeByte := make([]byte, 1)
+		var typeByte byte
 		//var cp ControlPacket
 
-		_, err = io.ReadFull(c.connReader, typeByte)
+		//_, err = io.ReadFull(c.bufferedConn, typeByte)
+		typeByte, err = c.bufferedConn.ReadByte()
 		if err != nil {
 			break
 		}
-		cph.unpack(typeByte[0])
-		cph.remainingLength = decodeLength(c.connReader)
+		cph.unpack(typeByte)
+		cph.remainingLength = decodeLength(c.bufferedConn)
 
 		if cph.remainingLength > 0 {
 			body = make([]byte, cph.remainingLength)
-			_, err = io.ReadFull(c.connReader, body)
+			_, err = io.ReadFull(c.bufferedConn, body)
 			if err != nil {
 				break
 			}

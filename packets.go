@@ -1,10 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io"
 )
 
 type ControlPacket interface {
@@ -163,16 +163,16 @@ func encode(length uint32) []byte {
 	return encLength
 }
 
-func decodeLength(src io.Reader) uint32 {
+func decodeLength(src *bufio.ReadWriter) uint32 {
 	var rLength uint32
 	var count int
 	var multiplier uint32 = 1
+	var digit byte
 	count = 1
-	digit := make([]byte, 1)
 	for {
-		io.ReadFull(src, digit)
-		rLength += uint32(digit[0]&127) * multiplier
-		if (digit[0] & 128) == 0 {
+		digit, _ = src.ReadByte()
+		rLength += uint32(digit&127) * multiplier
+		if (digit & 128) == 0 {
 			break
 		}
 		multiplier *= 128

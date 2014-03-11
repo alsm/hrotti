@@ -5,12 +5,18 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime"
+	"sync"
 )
 
-var clients map[string]*Client
+var clients struct {
+	sync.Mutex
+	list map[string]*Client
+}
 
 func init() {
-	clients = make(map[string]*Client)
+	clients.list = make(map[string]*Client)
+	runtime.GOMAXPROCS(4)
 }
 
 func main() {
@@ -61,7 +67,8 @@ func main() {
 		ca.returnCode = CONN_ACCEPTED
 		conn.Write(ca.Pack())
 
-		if c, ok := clients[cp.clientIdentifier]; ok {
+		clients.Lock()
+		if c, ok := clients.list[cp.clientIdentifier]; ok {
 			takeover = true
 			go func() {
 				c.Lock()
@@ -78,9 +85,10 @@ func main() {
 			if cp.cleanSession > 0 {
 				c.cleanSession = true
 			}
-			clients[cp.clientIdentifier] = c
+			clients.list[cp.clientIdentifier] = c
 			go c.Start()
 		}
+		clients.Unlock()
 		//go handleConnection(conn)
 	}
 }

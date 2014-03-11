@@ -37,7 +37,7 @@ func NewClient(conn net.Conn, bufferedConn *bufio.ReadWriter, clientId string) *
 	c.clientId = clientId
 	// c.subscriptions = list.New()
 	c.stop = make(chan bool)
-	c.outboundMessages = NewMsgQueue(100)
+	c.outboundMessages = NewMsgQueue(1000)
 	c.rootNode = rootNode
 	c.connected = true
 
@@ -46,7 +46,9 @@ func NewClient(conn net.Conn, bufferedConn *bufio.ReadWriter, clientId string) *
 
 func (c *Client) Remove() {
 	if c.cleanSession {
-		delete(clients, c.clientId)
+		clients.Lock()
+		delete(clients.list, c.clientId)
+		clients.Unlock()
 	}
 }
 
@@ -134,9 +136,6 @@ func (c *Client) Receive() {
 			dp.FixedHeader = cph
 			dp.Unpack(body)
 			c.Stop()
-			if c.cleanSession {
-				c.Remove()
-			}
 			break
 		case PUBLISH:
 			//fmt.Println("Received PUBLISH from", c.clientId)

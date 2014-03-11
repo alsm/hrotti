@@ -25,7 +25,7 @@ type Node struct {
 	Retained *publishPacket
 }
 
-func (n Node) Print(prefix string) string {
+func (n *Node) Print(prefix string) string {
 	for _, v := range n.Nodes {
 		fmt.Printf("%s ", v.Print(prefix+"--"))
 		if len(v.HashSub) > 0 || len(v.Sub) > 0 {
@@ -41,7 +41,7 @@ func (n Node) Print(prefix string) string {
 	return prefix + n.Name
 }
 
-func (n Node) AddSub(client *Client, subscription []string, qos uint, complete chan bool) {
+func (n *Node) AddSub(client *Client, subscription []string, qos uint, complete chan bool) {
 	n.Lock()
 	defer n.Unlock()
 	switch x := len(subscription); {
@@ -62,7 +62,7 @@ func (n Node) AddSub(client *Client, subscription []string, qos uint, complete c
 	}
 }
 
-func (n Node) DeleteSub(client *Client, subscription []string, complete chan bool) {
+func (n *Node) DeleteSub(client *Client, subscription []string, complete chan bool) {
 	n.Lock()
 	defer n.Unlock()
 	switch x := len(subscription); {
@@ -79,7 +79,7 @@ func (n Node) DeleteSub(client *Client, subscription []string, complete chan boo
 	}
 }
 
-func (n Node) DeliverMessage(topic []string, message ControlPacket) {
+func (n *Node) DeliverMessage(topic []string, message ControlPacket) {
 	n.RLock()
 	defer n.RUnlock()
 	for client, _ := range n.HashSub {

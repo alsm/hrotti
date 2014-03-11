@@ -49,6 +49,7 @@ func (n *Node) AddSub(client *Client, subscription []string, qos uint, complete 
 		if subscription[0] == "#" {
 			n.HashSub[client] = qos
 			complete <- true
+			go n.SendRetainedRecursive(client)
 		} else {
 			subTopic := subscription[0]
 			if _, ok := n.Nodes[subTopic]; !ok {
@@ -59,6 +60,20 @@ func (n *Node) AddSub(client *Client, subscription []string, qos uint, complete 
 	case x == 0:
 		n.Sub[client] = qos
 		complete <- true
+		if n.Retained != nil {
+			client.outboundMessages.Push(n.Retained)
+		}
+	}
+}
+
+func (n *Node) SendRetainedRecursive(client *Client) {
+	n.RLock()
+	defer n.RUnlock()
+	for _, node := range n.Nodes {
+		go node.SendRetainedRecursive(client)
+	}
+	if n.Retained != nil {
+		client.outboundMessages.Push(n.Retained)
 	}
 }
 

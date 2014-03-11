@@ -84,7 +84,7 @@ func (n Node) DeliverMessage(topic []string, message ControlPacket) {
 	defer n.RUnlock()
 	for client, _ := range n.HashSub {
 		if client.connected {
-			client.outboundMessages <- message
+			client.outboundMessages.Push(message)
 		}
 	}
 	switch x := len(topic); {
@@ -97,7 +97,7 @@ func (n Node) DeliverMessage(topic []string, message ControlPacket) {
 		for client, _ := range n.Sub {
 			//fmt.Println("Delivering message to", client.clientId)
 			if client.connected {
-				client.outboundMessages <- message
+				client.outboundMessages.Push(message)
 			}
 		}
 		return

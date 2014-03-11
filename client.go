@@ -21,7 +21,7 @@ type Client struct {
 	keepAlive        uint
 	connected        bool
 	topicSpace       string
-	outboundMessages chan ControlPacket
+	outboundMessages *msgQueue
 	stop             chan bool
 	lastSeen         time.Time
 	cleanSession     bool
@@ -37,7 +37,7 @@ func NewClient(conn net.Conn, bufferedConn *bufio.ReadWriter, clientId string) *
 	c.clientId = clientId
 	// c.subscriptions = list.New()
 	c.stop = make(chan bool)
-	c.outboundMessages = make(chan ControlPacket)
+	c.outboundMessages = NewMsgQueue(100)
 	c.rootNode = rootNode
 	c.connected = true
 
@@ -148,11 +148,13 @@ func (c *Client) Receive() {
 			case 1:
 				pa := New(PUBACK).(*pubackPacket)
 				pa.messageId = pp.messageId
-				c.outboundMessages <- pa
+				//c.outboundMessages <- pa
+				c.outboundMessages.PushHead(pa)
 			case 2:
 				pr := New(PUBREC).(*pubrecPacket)
 				pr.messageId = pp.messageId
-				c.outboundMessages <- pr
+				//c.outboundMessages <- pr
+				c.outboundMessages.PushHead(pr)
 			}
 		case PUBACK:
 			pa := New(PUBACK).(*pubackPacket)
@@ -168,7 +170,7 @@ func (c *Client) Receive() {
 			pr.Unpack(body)
 			pc := New(PUBCOMP).(*pubcompPacket)
 			pc.messageId = pr.messageId
-			c.outboundMessages <- pc
+			c.outboundMessages.PushHead(pc)
 		case PUBCOMP:
 			pc := New(PUBCOMP).(*pubcompPacket)
 			pc.FixedHeader = cph
@@ -182,7 +184,7 @@ func (c *Client) Receive() {
 			sa := New(SUBACK).(*subackPacket)
 			sa.messageId = sp.messageId
 			sa.grantedQoss = append(sa.grantedQoss, byte(sp.qoss[0]))
-			c.outboundMessages <- sa
+			c.outboundMessages.PushHead(sa)
 		case UNSUBSCRIBE:
 			fmt.Println("Received UNSUBSCRIBE from", c.clientId)
 			up := New(UNSUBSCRIBE).(*unsubscribePacket)
@@ -191,10 +193,10 @@ func (c *Client) Receive() {
 			c.RemoveSubscription(up.topics[0])
 			ua := New(UNSUBACK).(*unsubackPacket)
 			ua.messageId = up.messageId
-			c.outboundMessages <- ua
+			c.outboundMessages.PushHead(ua)
 		case PINGREQ:
 			presp := New(PINGRESP).(*pingrespPacket)
-			c.outboundMessages <- presp
+			c.outboundMessages.PushHead(presp)
 		}
 	}
 	select {
@@ -209,7 +211,8 @@ func (c *Client) Receive() {
 func (c *Client) Send() {
 	for {
 		select {
-		case msg := <-c.outboundMessages:
+		case <-c.outboundMessages.ready:
+			msg := c.outboundMessages.Pop()
 			c.conn.Write(msg.Pack())
 		case <-c.stop:
 			return

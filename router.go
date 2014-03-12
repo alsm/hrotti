@@ -110,7 +110,6 @@ func (n *Node) DeliverMessage(topic []string, message ControlPacket) {
 		}
 	case x == 0:
 		for client, _ := range n.Sub {
-			//fmt.Println("Delivering message to", client.clientId)
 			if client.connected {
 				client.outboundMessages.Push(message)
 			}

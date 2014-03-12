@@ -48,12 +48,13 @@ const (
 )
 
 const (
-	CONN_ACCEPTED          = 0x00
-	CONN_REF_BAD_PROTO_VER = 0x01
-	CONN_REF_ID_REJ        = 0x02
-	CONN_REF_SERV_UNAVAIL  = 0x03
-	CONN_REF_BAD_USER_PASS = 0x04
-	CONN_REF_NOT_AUTH      = 0x05
+	CONN_ACCEPTED           = 0x00
+	CONN_REF_BAD_PROTO_VER  = 0x01
+	CONN_REF_ID_REJ         = 0x02
+	CONN_REF_SERV_UNAVAIL   = 0x03
+	CONN_REF_BAD_USER_PASS  = 0x04
+	CONN_REF_NOT_AUTH       = 0x05
+	CONN_PROTOCOL_VIOLATION = 0xFF
 )
 
 func msgIdToBytes(messageId msgId) []byte {
@@ -139,12 +140,26 @@ func encodeField(field string) []byte {
 	return append(fieldLength, []byte(field)...)
 }
 
+func encodeByteField(field []byte) []byte {
+	fieldLength := make([]byte, 2)
+	binary.BigEndian.PutUint16(fieldLength, uint16(len(field)))
+	return append(fieldLength, field...)
+}
+
 func decodeField(packet []byte) ([]byte, string, int) {
 	if len(packet) == 0 {
 		return packet, "", 0
 	}
 	fieldLength := binary.BigEndian.Uint16(packet[:2]) + 2
 	return packet[fieldLength:], string(packet[2:fieldLength]), int(fieldLength)
+}
+
+func decodeByteField(packet []byte) ([]byte, []byte, int) {
+	if len(packet) == 0 {
+		return packet, nil, 0
+	}
+	fieldLength := binary.BigEndian.Uint16(packet[:2]) + 2
+	return packet[fieldLength:], packet[2:fieldLength], int(fieldLength)
 }
 
 func encode(length uint32) []byte {
@@ -202,9 +217,9 @@ type connectPacket struct {
 
 	clientIdentifier string
 	willTopic        string
-	willMessage      string
+	willMessage      []byte
 	username         string
-	password         string
+	password         []byte
 }
 
 func (c *connectPacket) String() string {
@@ -224,13 +239,13 @@ func (c *connectPacket) Pack() []byte {
 	body = append(body, encodeField(c.clientIdentifier)...)
 	if c.willFlag == 1 {
 		body = append(body, encodeField(c.willTopic)...)
-		body = append(body, encodeField(c.willMessage)...)
+		body = append(body, encodeByteField(c.willMessage)...)
 	}
 	if c.usernameFlag == 1 {
 		body = append(body, encodeField(c.username)...)
 	}
 	if c.passwordFlag == 1 {
-		body = append(body, encodeField(c.password)...)
+		body = append(body, encodeByteField(c.password)...)
 	}
 	return append(c.FixedHeader.pack(uint32(len(body))), body...)
 }
@@ -250,30 +265,30 @@ func (c *connectPacket) Unpack(packet []byte) {
 	packet, c.clientIdentifier, _ = decodeField(packet[4:])
 	if c.willFlag == 1 {
 		packet, c.willTopic, _ = decodeField(packet[:])
-		packet, c.willMessage, _ = decodeField(packet[:])
+		packet, c.willMessage, _ = decodeByteField(packet[:])
 	}
 	if c.usernameFlag == 1 {
 		packet, c.username, _ = decodeField(packet[:])
 	}
 	if c.passwordFlag == 1 {
-		packet, c.password, _ = decodeField(packet[:])
+		packet, c.password, _ = decodeByteField(packet[:])
 	}
 }
 
-func (c *connectPacket) Validate() bool {
+func (c *connectPacket) Validate() byte {
 	if c.passwordFlag == 1 && c.usernameFlag != 1 {
-		return false
+		return CONN_REF_BAD_USER_PASS
 	}
 	if c.reservedBit != 0 {
-		return false
+		return CONN_PROTOCOL_VIOLATION
 	}
 	if c.protocolName != "MQIsdp" && c.protocolName != "MQTT" {
-		return false
+		return CONN_PROTOCOL_VIOLATION
 	}
 	if len(c.clientIdentifier) > 65535 || len(c.username) > 65535 || len(c.password) > 65535 {
-		return false
+		return CONN_PROTOCOL_VIOLATION
 	}
-	return true
+	return CONN_ACCEPTED
 }
 
 //CONNACK packet
@@ -437,7 +452,6 @@ func (pc *pubcompPacket) String() string {
 }
 
 func (pc *pubcompPacket) Pack() []byte {
-	fmt.Println("Outbound bytes", pc.FixedHeader.pack(uint32(2)))
 	return append(pc.FixedHeader.pack(uint32(2)), msgIdToBytes(pc.messageId)...)
 }
 

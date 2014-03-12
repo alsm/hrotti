@@ -25,21 +25,17 @@ type Client struct {
 	stop             chan bool
 	lastSeen         time.Time
 	cleanSession     bool
+	willMessage      *publishPacket
 }
 
 func NewClient(conn net.Conn, bufferedConn *bufio.ReadWriter, clientId string) *Client {
-	//if !validateClientId(clientId) {
-	//	return nil, errors.New("Invalid Client Id")
-	//}
 	c := &Client{}
 	c.conn = conn
 	c.bufferedConn = bufferedConn
 	c.clientId = clientId
-	// c.subscriptions = list.New()
 	c.stop = make(chan bool)
 	c.outboundMessages = NewMsgQueue(1000)
 	c.rootNode = rootNode
-	c.connected = true
 
 	return c
 }
@@ -52,16 +48,36 @@ func (c *Client) Remove() {
 	}
 }
 
-func (c *Client) Stop() {
-	c.connected = false
+func (c *Client) Stop(sendWill bool) {
 	close(c.stop)
 	c.conn.Close()
-	c.Remove()
+	if sendWill && c.willMessage != nil {
+		go c.rootNode.DeliverMessage(strings.Split(c.willMessage.topicName, "/"), c.willMessage)
+	}
+	c.connected = false
 }
 
-func (c *Client) Start() {
+func (c *Client) Start(cp *connectPacket) {
+	if cp.cleanSession == 1 {
+		c.cleanSession = true
+	}
+	if cp.willFlag == 1 {
+		pp := New(PUBLISH).(*publishPacket)
+		pp.FixedHeader.Qos = cp.willQos
+		pp.FixedHeader.Retain = cp.willRetain
+		pp.topicName = cp.willTopic
+		pp.payload = cp.willMessage
+
+		c.willMessage = pp
+	} else {
+		c.willMessage = nil
+	}
 	go c.Receive()
 	go c.Send()
+	ca := New(CONNACK).(*connackPacket)
+	ca.returnCode = CONN_ACCEPTED
+	c.outboundMessages.Push(ca)
+	c.connected = true
 }
 
 func (c *Client) resetLastSeenTime() {
@@ -77,13 +93,6 @@ func (c *Client) SetRootNode(node *Node) {
 }
 
 func (c *Client) AddSubscription(topic string, qos uint) {
-	// for s := c.subscriptions.Front(); s != nil; s = s.Next() {
-	// 	if s.Value.(*Subscription).match(subscription.topicFilter) {
-	// 		s.Value = subscription
-	// 		return
-	// 	}
-	// }
-	// c.subscriptions.PushBack(subscription)
 	complete := make(chan bool)
 	defer close(complete)
 	c.rootNode.AddSub(c, strings.Split(topic, "/"), qos, complete)
@@ -92,17 +101,11 @@ func (c *Client) AddSubscription(topic string, qos uint) {
 }
 
 func (c *Client) RemoveSubscription(topic string) (bool, error) {
-	// for s := c.subscriptions.Front(); s != nil; s = s.Next() {
-	// 	if s.Value.(*Subscription).match(subscription.topicFilter) {
-	// 		c.subscriptions.Remove(s)
-	// 		return true, nil
-	// 	}
-	// }
 	complete := make(chan bool)
 	defer close(complete)
 	c.rootNode.DeleteSub(c, strings.Split(topic, "/"), complete)
 	<-complete
-	return true, errors.New("Topic not found")
+	return true, nil
 }
 
 func (c *Client) Receive() {
@@ -111,9 +114,7 @@ func (c *Client) Receive() {
 		var err error
 		var body []byte
 		var typeByte byte
-		//var cp ControlPacket
 
-		//_, err = io.ReadFull(c.bufferedConn, typeByte)
 		typeByte, err = c.bufferedConn.ReadByte()
 		if err != nil {
 			break
@@ -135,8 +136,9 @@ func (c *Client) Receive() {
 			dp := New(DISCONNECT).(*disconnectPacket)
 			dp.FixedHeader = cph
 			dp.Unpack(body)
-			c.Stop()
-			break
+			c.Stop(false)
+			c.Remove()
+			continue
 		case PUBLISH:
 			//fmt.Println("Received PUBLISH from", c.clientId)
 			pp := New(PUBLISH).(*publishPacket)
@@ -202,7 +204,9 @@ func (c *Client) Receive() {
 	case <-c.stop:
 		return
 	default:
-		fmt.Println("Error on socket read")
+		fmt.Println("Error on socket read", c.clientId)
+		c.Stop(true)
+		c.Remove()
 		return
 	}
 }

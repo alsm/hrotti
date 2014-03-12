@@ -20,7 +20,7 @@ func init() {
 }
 
 func main() {
-	ln, err := net.Listen("tcp", ":1883")
+	ln, err := net.Listen("tcp", ":17001")
 	if err != nil {
 		fmt.Println(err.Error())
 	}
@@ -37,12 +37,9 @@ func main() {
 			fmt.Println(err.Error())
 			continue
 		}
-		//read only the first  byte to check for connect
-		//io.ReadFull(bufferedConn, typeByte)
+
 		typeByte, _ = bufferedConn.ReadByte()
 		cph.unpack(typeByte)
-		//_, err = conn.Read(typeByte)
-		//fmt.Println("read bytes:", length)
 
 		if cph.MessageType != CONNECT {
 			conn.Close()
@@ -58,37 +55,40 @@ func main() {
 		cp := New(CONNECT).(*connectPacket)
 		cp.FixedHeader = cph
 		cp.Unpack(body)
-		//fmt.Println(cp.String())
-		if cp.Validate() {
-			//fmt.Println("CONNECT packet validated")
+		if rc := cp.Validate(); rc != CONN_ACCEPTED {
+			if rc != CONN_PROTOCOL_VIOLATION {
+				ca := New(CONNACK).(*connackPacket)
+				ca.returnCode = rc
+				conn.Write(ca.Pack())
+			}
+			conn.Close()
+			continue
 		}
-
-		ca := New(CONNACK).(*connackPacket)
-		ca.returnCode = CONN_ACCEPTED
-		conn.Write(ca.Pack())
 
 		clients.Lock()
 		if c, ok := clients.list[cp.clientIdentifier]; ok {
 			takeover = true
 			go func() {
+				fmt.Println("Takeover!")
 				c.Lock()
-				c.Stop()
+				if c.connected {
+					fmt.Println("Client is connected, stopping", c.clientId)
+					c.Stop(false)
+				} else {
+					fmt.Println("Durable client reconnecting", c.clientId)
+				}
 				c.conn = conn
 				c.bufferedConn = bufferedConn
 				c.Unlock()
-				c.Start()
+				go c.Start(cp)
 			}()
 		}
 
 		if !takeover {
 			c = NewClient(conn, bufferedConn, cp.clientIdentifier)
-			if cp.cleanSession > 0 {
-				c.cleanSession = true
-			}
 			clients.list[cp.clientIdentifier] = c
-			go c.Start()
+			go c.Start(cp)
 		}
 		clients.Unlock()
-		//go handleConnection(conn)
 	}
 }

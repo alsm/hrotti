@@ -2,7 +2,7 @@ package main
 
 import (
 	"bufio"
-	"errors"
+	//"errors"
 	"fmt"
 	"io"
 	"net"

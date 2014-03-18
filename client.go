@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	//"errors"
-	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -40,6 +39,75 @@ func NewClient(conn net.Conn, bufferedConn *bufio.ReadWriter, clientId string) *
 	return c
 }
 
+func InitClient(conn net.Conn) {
+	var cph FixedHeader
+	var takeover bool
+	var c *Client
+	var typeByte byte
+
+	bufferedConn := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+
+	typeByte, _ = bufferedConn.ReadByte()
+	cph.unpack(typeByte)
+
+	if cph.MessageType != CONNECT {
+		conn.Close()
+		return
+	}
+
+	cph.remainingLength = decodeLength(bufferedConn)
+
+	//a buffer to receive the rest of the connect packet
+	body := make([]byte, cph.remainingLength)
+	io.ReadFull(bufferedConn, body)
+
+	cp := New(CONNECT).(*connectPacket)
+	cp.FixedHeader = cph
+	cp.Unpack(body)
+
+	rc := cp.Validate()
+	if rc != CONN_ACCEPTED {
+		if rc != CONN_PROTOCOL_VIOLATION {
+			ca := New(CONNACK).(*connackPacket)
+			ca.returnCode = rc
+			bufferedConn.Write(ca.Pack())
+			bufferedConn.Flush()
+			ERROR.Println(connackReturnCodes[rc], conn.RemoteAddr())
+		}
+		conn.Close()
+		return
+	} else {
+		INFO.Println(connackReturnCodes[rc], cp.clientIdentifier, conn.RemoteAddr())
+	}
+
+	clients.RLock()
+	if c, ok := clients.list[cp.clientIdentifier]; ok {
+		takeover = true
+		go func() {
+			c.Lock()
+			if c.connected {
+				INFO.Println("Clientid", c.clientId, "already connected, stopping first client")
+				c.Stop(false)
+			} else {
+				INFO.Println("Durable client reconnecting", c.clientId)
+			}
+			c.conn = conn
+			c.bufferedConn = bufferedConn
+			c.Unlock()
+			go c.Start(cp)
+		}()
+	}
+	clients.RUnlock()
+
+	if !takeover {
+		clients.Lock()
+		c = NewClient(conn, bufferedConn, cp.clientIdentifier)
+		clients.list[cp.clientIdentifier] = c
+		clients.Unlock()
+		go c.Start(cp)
+	}
+}
+
 func (c *Client) Remove() {
 	if c.cleanSession {
 		clients.Lock()
@@ -58,6 +126,7 @@ func (c *Client) Stop(sendWill bool) {
 }
 
 func (c *Client) Start(cp *connectPacket) {
+
 	if cp.cleanSession == 1 {
 		c.cleanSession = true
 	}
@@ -132,7 +201,7 @@ func (c *Client) Receive() {
 
 		switch cph.MessageType {
 		case DISCONNECT:
-			fmt.Println("Received DISCONNECT from", c.clientId)
+			INFO.Println("Received DISCONNECT from", c.clientId)
 			dp := New(DISCONNECT).(*disconnectPacket)
 			dp.FixedHeader = cph
 			dp.Unpack(body)
@@ -140,7 +209,6 @@ func (c *Client) Receive() {
 			c.Remove()
 			continue
 		case PUBLISH:
-			//fmt.Println("Received PUBLISH from", c.clientId)
 			pp := New(PUBLISH).(*publishPacket)
 			pp.FixedHeader = cph
 			pp.Unpack(body)
@@ -149,12 +217,10 @@ func (c *Client) Receive() {
 			case 1:
 				pa := New(PUBACK).(*pubackPacket)
 				pa.messageId = pp.messageId
-				//c.outboundMessages <- pa
 				c.outboundMessages.PushHead(pa)
 			case 2:
 				pr := New(PUBREC).(*pubrecPacket)
 				pr.messageId = pp.messageId
-				//c.outboundMessages <- pr
 				c.outboundMessages.PushHead(pr)
 			}
 		case PUBACK:
@@ -177,7 +243,7 @@ func (c *Client) Receive() {
 			pc.FixedHeader = cph
 			pc.Unpack(body)
 		case SUBSCRIBE:
-			fmt.Println("Received SUBSCRIBE from", c.clientId)
+			PROTOCOL.Println("Received SUBSCRIBE from", c.clientId)
 			sp := New(SUBSCRIBE).(*subscribePacket)
 			sp.FixedHeader = cph
 			sp.Unpack(body)
@@ -187,7 +253,7 @@ func (c *Client) Receive() {
 			sa.grantedQoss = append(sa.grantedQoss, byte(sp.qoss[0]))
 			c.outboundMessages.PushHead(sa)
 		case UNSUBSCRIBE:
-			fmt.Println("Received UNSUBSCRIBE from", c.clientId)
+			PROTOCOL.Println("Received UNSUBSCRIBE from", c.clientId)
 			up := New(UNSUBSCRIBE).(*unsubscribePacket)
 			up.FixedHeader = cph
 			up.Unpack(body)
@@ -204,7 +270,7 @@ func (c *Client) Receive() {
 	case <-c.stop:
 		return
 	default:
-		fmt.Println("Error on socket read", c.clientId)
+		ERROR.Println("Error on socket read", c.clientId)
 		c.Stop(true)
 		c.Remove()
 		return
@@ -216,7 +282,8 @@ func (c *Client) Send() {
 		select {
 		case <-c.outboundMessages.ready:
 			msg := c.outboundMessages.Pop()
-			c.conn.Write(msg.Pack())
+			c.bufferedConn.Write(msg.Pack())
+			c.bufferedConn.Flush()
 		case <-c.stop:
 			return
 		}

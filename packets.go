@@ -57,6 +57,15 @@ const (
 	CONN_PROTOCOL_VIOLATION = 0xFF
 )
 
+var connackReturnCodes = map[uint8]string{
+	0: "Connection Accepted",
+	1: "Connection Refused: Bad Protocol Version",
+	2: "Connection Refused: Client Identifier Rejected",
+	3: "Connection Refused: Server Unavailable",
+	4: "Connection Refused: Username or Password in unknown format",
+	5: "Connection Refused: Not Authorised",
+}
+
 func msgIdToBytes(messageId msgId) []byte {
 	msgIdBytes := make([]byte, 2)
 	binary.BigEndian.PutUint16(msgIdBytes, uint16(messageId))

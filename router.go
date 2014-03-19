@@ -10,8 +10,8 @@ var rootNode *Node = NewNode("")
 
 func NewNode(name string) *Node {
 	return &Node{Name: name,
-		HashSub: make(map[*Client]uint),
-		Sub:     make(map[*Client]uint),
+		HashSub: make(map[*Client]byte),
+		Sub:     make(map[*Client]byte),
 		Nodes:   make(map[string]*Node),
 	}
 }
@@ -19,8 +19,8 @@ func NewNode(name string) *Node {
 type Node struct {
 	sync.RWMutex
 	Name     string
-	HashSub  map[*Client]uint
-	Sub      map[*Client]uint
+	HashSub  map[*Client]byte
+	Sub      map[*Client]byte
 	Nodes    map[string]*Node
 	Retained *publishPacket
 }
@@ -41,7 +41,7 @@ func (n *Node) Print(prefix string) string {
 	return prefix + n.Name
 }
 
-func (n *Node) AddSub(client *Client, subscription []string, qos uint, complete chan bool) {
+func (n *Node) AddSub(client *Client, subscription []string, qos byte, complete chan bool) {
 	n.Lock()
 	defer n.Unlock()
 	switch x := len(subscription); {
@@ -115,12 +115,21 @@ func (n *Node) DeleteSub(client *Client, subscription []string, complete chan bo
 	}
 }
 
-func (n *Node) DeliverMessage(topic []string, message ControlPacket) {
+func (n *Node) DeliverMessage(topic []string, message *publishPacket) {
 	n.RLock()
 	defer n.RUnlock()
-	for client, _ := range n.HashSub {
+	for client, subQos := range n.HashSub {
 		if client.connected {
-			client.outboundMessages.Push(message)
+			deliveryMessage := message.Copy()
+			deliveryMessage.Qos = calcQos(subQos, message.Qos)
+
+			switch deliveryMessage.Qos {
+			case 0:
+				client.outboundMessages.Push(deliveryMessage)
+			case 1, 2:
+				deliveryMessage.messageId = client.getId()
+				client.outboundMessages.Push(deliveryMessage)
+			}
 		}
 	}
 	switch x := len(topic); {
@@ -134,11 +143,27 @@ func (n *Node) DeliverMessage(topic []string, message ControlPacket) {
 			return
 		}
 	case x == 0:
-		for client, _ := range n.Sub {
+		for client, subQos := range n.Sub {
 			if client.connected {
-				client.outboundMessages.Push(message)
+				deliveryMessage := message.Copy()
+				deliveryMessage.Qos = calcQos(subQos, message.Qos)
+
+				switch deliveryMessage.Qos {
+				case 0:
+					client.outboundMessages.Push(deliveryMessage)
+				case 1, 2:
+					deliveryMessage.messageId = client.getId()
+					client.outboundMessages.Push(deliveryMessage)
+				}
 			}
 		}
 		return
 	}
+}
+
+func calcQos(a, b byte) byte {
+	if a < b {
+		return a
+	}
+	return b
 }

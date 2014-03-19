@@ -95,7 +95,7 @@ func New(packetType byte) ControlPacket {
 	case PUBREC:
 		return &pubrecPacket{FixedHeader: FixedHeader{MessageType: PUBREC}}
 	case PUBREL:
-		return &pubrelPacket{FixedHeader: FixedHeader{MessageType: PUBREL}}
+		return &pubrelPacket{FixedHeader: FixedHeader{MessageType: PUBREL, Qos: 1}}
 	case PUBCOMP:
 		return &pubcompPacket{FixedHeader: FixedHeader{MessageType: PUBCOMP}}
 	case SUBSCRIBE:
@@ -384,6 +384,14 @@ func (p *publishPacket) Unpack(packet []byte) {
 
 }
 
+func (p *publishPacket) Copy() *publishPacket {
+	newP := New(PUBLISH).(*publishPacket)
+	newP.topicName = p.topicName
+	newP.payload = p.payload
+
+	return newP
+}
+
 //PUBACK packet
 
 type pubackPacket struct {
@@ -475,7 +483,7 @@ type subscribePacket struct {
 	messageId msgId
 	payload   []byte
 	topics    []string
-	qoss      []uint
+	qoss      []byte
 }
 
 func (s *subscribePacket) String() string {
@@ -499,7 +507,7 @@ func (s *subscribePacket) Unpack(packet []byte) {
 	var topic string
 	for payload, topic, _ = decodeField(payload); topic != ""; payload, topic, _ = decodeField(payload) {
 		s.topics = append(s.topics, topic)
-		s.qoss = append(s.qoss, uint(payload[0]))
+		s.qoss = append(s.qoss, payload[0])
 		payload = payload[1:]
 	}
 }

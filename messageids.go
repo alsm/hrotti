@@ -19,6 +19,7 @@ const (
 
 func (m *MessageIds) genMsgIds() {
 	m.idChan = make(chan msgId, 10)
+	m.index = make(map[msgId]bool)
 	go func() {
 		for {
 			m.Lock()
@@ -37,7 +38,7 @@ func (m *MessageIds) genMsgIds() {
 func (m *MessageIds) inUse(id msgId) bool {
 	m.RLock()
 	defer m.RUnlock()
-	return m[id]
+	return m.index[id]
 }
 
 func (m *MessageIds) freeId(id msgId) {

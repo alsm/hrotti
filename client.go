@@ -162,11 +162,12 @@ func (c *Client) SetRootNode(node *Node) {
 	c.rootNode = node
 }
 
-func (c *Client) AddSubscription(topic string, qos uint) {
-	complete := make(chan bool)
+func (c *Client) AddSubscription(topic string, qos byte) {
+	complete := make(chan bool, 1)
 	defer close(complete)
 	c.rootNode.AddSub(c, strings.Split(topic, "/"), qos, complete)
 	<-complete
+	INFO.Println("Subscription made for", c.clientId, topic)
 	return
 }
 
@@ -216,6 +217,7 @@ func (c *Client) Receive() {
 			pp := New(PUBLISH).(*publishPacket)
 			pp.FixedHeader = cph
 			pp.Unpack(body)
+			PROTOCOL.Println("Received PUBLISH from", c.clientId, pp.topicName)
 			c.rootNode.DeliverMessage(strings.Split(pp.topicName, "/"), pp)
 			switch pp.Qos {
 			case 1:
@@ -234,7 +236,7 @@ func (c *Client) Receive() {
 			if c.inUse(pa.messageId) {
 				c.freeId(pa.messageId)
 			} else {
-				ERROR.Println("Received a PUBCOMP for unknown msgid", pr.messageId, "from", c.clientId)
+				ERROR.Println("Received a PUBCOMP for unknown msgid", pa.messageId, "from", c.clientId)
 			}
 		case PUBREC:
 			pr := New(PUBREC).(*pubrecPacket)
@@ -261,7 +263,7 @@ func (c *Client) Receive() {
 			if c.inUse(pc.messageId) {
 				c.freeId(pc.messageId)
 			} else {
-				ERROR.Println("Received a PUBCOMP for unknown msgid", pr.messageId, "from", c.clientId)
+				ERROR.Println("Received a PUBCOMP for unknown msgid", pc.messageId, "from", c.clientId)
 			}
 		case SUBSCRIBE:
 			PROTOCOL.Println("Received SUBSCRIBE from", c.clientId)

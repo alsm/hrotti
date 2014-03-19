@@ -6,7 +6,7 @@ An MQTT 3.1 broker written in Go
 Only serves on a single host and a single port atm, and only handles tcp connections (no TLS or Websockets).
 This is configured by setting two environment variables;
 
-HROTTI_HOST - the local host or ip address to bind to (0.0.0.0 or unset for all interfaces)
+HROTTI_HOST - the local host or ip address to bind to (0.0.0.0 or unset for all interfaces)  
 HROTTI_PORT - the port to listen on
 
 Hrotti supports;

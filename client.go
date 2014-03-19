@@ -174,6 +174,9 @@ func (c *Client) RemoveSubscription(topic string) (bool, error) {
 	defer close(complete)
 	c.rootNode.DeleteSub(c, strings.Split(topic, "/"), complete)
 	<-complete
+	if strings.ContainsAny(topic, "+") {
+		c.rootNode.FindRetainedForPlus(c, strings.Split(topic, "/"))
+	}
 	return true, nil
 }
 

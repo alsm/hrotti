@@ -66,6 +66,27 @@ func (n *Node) AddSub(client *Client, subscription []string, qos uint, complete 
 	}
 }
 
+func (n *Node) FindRetainedForPlus(client *Client, subscription []string) {
+	n.RLock()
+	defer n.RUnlock()
+	switch x := len(subscription); {
+	case x > 0:
+		if subscription[0] == "+" {
+			for _, n := range n.Nodes {
+				go n.FindRetainedForPlus(client, subscription[1:])
+			}
+		} else {
+			if node, ok := n.Nodes[subscription[0]]; ok {
+				go node.FindRetainedForPlus(client, subscription[1:])
+			}
+		}
+	case x == 0:
+		if n.Retained != nil {
+			client.outboundMessages.Push(n.Retained)
+		}
+	}
+}
+
 func (n *Node) SendRetainedRecursive(client *Client) {
 	n.RLock()
 	defer n.RUnlock()
@@ -105,6 +126,10 @@ func (n *Node) DeliverMessage(topic []string, message ControlPacket) {
 	switch x := len(topic); {
 	case x > 0:
 		if node, ok := n.Nodes[topic[0]]; ok {
+			go node.DeliverMessage(topic[1:], message)
+			return
+		}
+		if node, ok := n.Nodes["+"]; ok {
 			go node.DeliverMessage(topic[1:], message)
 			return
 		}

@@ -1,10 +1,17 @@
 hrotti
 ======
 
-An MQTT broker written in Go
+An MQTT 3.1 broker written in Go
 
-So this is really just getting started and is just the barest of bones atm. There's no configuration, it listens on TCP 1883 and that's it.
-It'll do the packet flows for QoS 1 and 2 publishes from a client but it won't persist the messages.
-~~It doesn't support sending Qos 1 or 2 publishes.~~
-~~It doesn't yet do retained messages.~~
-Hrotti does now handle Qos 1 and 2 publishes, and handles retained messages! :)
+Only serves on a single host and a single port atm, and only handles tcp connections (no TLS or Websockets).
+This is configured by setting two environment variables;
+
+HROTTI_HOST - the local host or ip address to bind to (0.0.0.0 or unset for all interfaces)
+HROTTI_PORT - the port to listen on
+
+Hrotti supports;
+QoS 0, 1 and 2 for sending/receiving/subscriptions
+Retained messages
+Topic wildcards
+
+It does not do any persistence of messages, QoS 1 and 2 support is only for completing the packet flows.

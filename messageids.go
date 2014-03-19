@@ -7,7 +7,7 @@ import (
 type msgId uint16
 
 type MessageIds struct {
-	sync.Mutex
+	sync.RWMutex
 	idChan chan msgId
 	index  map[msgId]bool
 }
@@ -17,16 +17,16 @@ const (
 	msgId_MIN msgId = 1
 )
 
-func (mids *MessageIds) genMsgIds() {
-	mids.idChan = make(chan msgId, 10)
+func (m *MessageIds) genMsgIds() {
+	m.idChan = make(chan msgId, 10)
 	go func() {
 		for {
-			mids.Lock()
+			m.Lock()
 			for i := msgId_MIN; i < msgId_MAX; i++ {
-				if !mids.index[i] {
-					mids.index[i] = true
-					mids.Unlock()
-					mids.idChan <- i
+				if !m.index[i] {
+					m.index[i] = true
+					m.Unlock()
+					m.idChan <- i
 					break
 				}
 			}
@@ -34,12 +34,18 @@ func (mids *MessageIds) genMsgIds() {
 	}()
 }
 
-func (mids *MessageIds) freeId(id msgId) {
-	defer mids.Unlock()
-	mids.Lock()
-	mids.index[id] = false
+func (m *MessageIds) inUse(id msgId) bool {
+	m.RLock()
+	defer m.RUnlock()
+	return m[id]
 }
 
-func (mids *MessageIds) getId() msgId {
-	return <-mids.idChan
+func (m *MessageIds) freeId(id msgId) {
+	defer m.Unlock()
+	m.Lock()
+	m.index[id] = false
+}
+
+func (m *MessageIds) getId() msgId {
+	return <-m.idChan
 }

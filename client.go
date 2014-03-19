@@ -141,6 +141,7 @@ func (c *Client) Start(cp *connectPacket) {
 	} else {
 		c.willMessage = nil
 	}
+	c.genMsgIds()
 	go c.Receive()
 	go c.Send()
 	ca := New(CONNACK).(*connackPacket)
@@ -230,10 +231,22 @@ func (c *Client) Receive() {
 			pa := New(PUBACK).(*pubackPacket)
 			pa.FixedHeader = cph
 			pa.Unpack(body)
+			if c.inUse(pa.messageId) {
+				c.freeId(pa.messageId)
+			} else {
+				ERROR.Println("Received a PUBCOMP for unknown msgid", pr.messageId, "from", c.clientId)
+			}
 		case PUBREC:
 			pr := New(PUBREC).(*pubrecPacket)
 			pr.FixedHeader = cph
 			pr.Unpack(body)
+			if c.inUse(pr.messageId) {
+				prel := New(PUBREL).(*pubrelPacket)
+				prel.messageId = pr.messageId
+				c.outboundMessages.PushHead(prel)
+			} else {
+				ERROR.Println("Received a PUBREC for unknown msgid", pr.messageId, "from", c.clientId)
+			}
 		case PUBREL:
 			pr := New(PUBREL).(*pubrelPacket)
 			pr.FixedHeader = cph
@@ -245,6 +258,11 @@ func (c *Client) Receive() {
 			pc := New(PUBCOMP).(*pubcompPacket)
 			pc.FixedHeader = cph
 			pc.Unpack(body)
+			if c.inUse(pc.messageId) {
+				c.freeId(pc.messageId)
+			} else {
+				ERROR.Println("Received a PUBCOMP for unknown msgid", pr.messageId, "from", c.clientId)
+			}
 		case SUBSCRIBE:
 			PROTOCOL.Println("Received SUBSCRIBE from", c.clientId)
 			sp := New(SUBSCRIBE).(*subscribePacket)

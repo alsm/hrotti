@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"io"
 	"io/ioutil"
 	"log"
@@ -21,6 +20,10 @@ var clients struct {
 	list map[string]*Client
 }
 
+var config struct {
+	Server string
+}
+
 func configureLogger(infoHandle io.Writer, protocolHandle io.Writer, errorHandle io.Writer) {
 	INFO = log.New(infoHandle,
 		"INFO: ",
@@ -37,14 +40,19 @@ func configureLogger(infoHandle io.Writer, protocolHandle io.Writer, errorHandle
 
 func init() {
 	clients.list = make(map[string]*Client)
+	Host := os.Getenv("HROTTI_HOST")
+	Port := os.Getenv("HROTTI_PORT")
+	config.Server = Host + ":" + Port
 }
 
 func main() {
 	configureLogger(os.Stdout, ioutil.Discard, os.Stderr)
-	ln, err := net.Listen("tcp", ":1883")
+	ln, err := net.Listen("tcp", config.Server)
 	if err != nil {
 		ERROR.Println(err.Error())
+		os.Exit(1)
 	}
+	INFO.Println("Started MQTT Broker on", config.Server)
 	for {
 		conn, err := ln.Accept()
 		INFO.Println("New incoming connection", conn.RemoteAddr())

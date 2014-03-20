@@ -10,8 +10,8 @@ HROTTI_HOST - the local host or ip address to bind to (0.0.0.0 or unset for all 
 HROTTI_PORT - the port to listen on
 
 Hrotti supports;
-QoS 0, 1 and 2 for sending/receiving/subscriptions
-Retained messages
-Topic wildcards
+* QoS 0, 1 and 2 for sending/receiving/subscriptions
+* Retained messages
+* Topic wildcards
 
 It does not do any persistence of messages, QoS 1 and 2 support is only for completing the packet flows.

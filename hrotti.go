@@ -27,7 +27,7 @@ var config struct {
 func configureLogger(infoHandle io.Writer, protocolHandle io.Writer, errorHandle io.Writer) {
 	INFO = log.New(infoHandle,
 		"INFO: ",
-		log.Ldate|log.Ltime|log.Lshortfile)
+		log.Ldate|log.Ltime)
 
 	PROTOCOL = log.New(protocolHandle,
 		"PROTOCOL: ",
@@ -42,6 +42,9 @@ func init() {
 	clients.list = make(map[string]*Client)
 	Host := os.Getenv("HROTTI_HOST")
 	Port := os.Getenv("HROTTI_PORT")
+	if Port == "" {
+		Port = "1883"
+	}
 	config.Server = Host + ":" + Port
 }
 

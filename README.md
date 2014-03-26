@@ -7,7 +7,8 @@ Only serves on a single host and a single port atm, and only handles tcp connect
 This is configured by setting two environment variables;
 
 HROTTI_HOST - the local host or ip address to bind to (0.0.0.0 or unset for all interfaces)  
-HROTTI_PORT - the port to listen on
+HROTTI_PORT - the port to listen on  
+HROTTI_USE_WEBSOCKETS - true or false (default) to listen for websocket connections rather than tcp  
 
 Hrotti supports;
 * QoS 0, 1 and 2 for sending/receiving/subscriptions

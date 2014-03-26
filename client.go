@@ -106,6 +106,7 @@ func InitClient(conn net.Conn) {
 		clients.Unlock()
 		go c.Start(cp)
 	}
+	<-c.stop
 }
 
 func (c *Client) Remove() {
@@ -167,6 +168,9 @@ func (c *Client) AddSubscription(topic string, qos byte) {
 	defer close(complete)
 	c.rootNode.AddSub(c, strings.Split(topic, "/"), qos, complete)
 	<-complete
+	if strings.ContainsAny(topic, "+") {
+		c.rootNode.FindRetainedForPlus(c, strings.Split(topic, "/"))
+	}
 	INFO.Println("Subscription made for", c.clientId, topic)
 	return
 }
@@ -176,9 +180,6 @@ func (c *Client) RemoveSubscription(topic string) (bool, error) {
 	defer close(complete)
 	c.rootNode.DeleteSub(c, strings.Split(topic, "/"), complete)
 	<-complete
-	if strings.ContainsAny(topic, "+") {
-		c.rootNode.FindRetainedForPlus(c, strings.Split(topic, "/"))
-	}
 	return true, nil
 }
 
@@ -191,6 +192,7 @@ func (c *Client) Receive() {
 
 		typeByte, err = c.bufferedConn.ReadByte()
 		if err != nil {
+			ERROR.Println(err.Error(), c.clientId)
 			break
 		}
 		cph.unpack(typeByte)

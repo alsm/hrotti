@@ -1,18 +1,22 @@
 package main
 
 import (
+	"code.google.com/p/go.net/websocket"
 	"io"
 	"io/ioutil"
 	"log"
 	"net"
+	"net/http"
 	"os"
+	"strconv"
 	"sync"
 )
 
 var (
-	INFO     *log.Logger
-	PROTOCOL *log.Logger
-	ERROR    *log.Logger
+	INFO      *log.Logger
+	PROTOCOL  *log.Logger
+	ERROR     *log.Logger
+	WebSocket bool
 )
 
 var clients struct {
@@ -42,6 +46,7 @@ func init() {
 	clients.list = make(map[string]*Client)
 	Host := os.Getenv("HROTTI_HOST")
 	Port := os.Getenv("HROTTI_PORT")
+	WebSocket, _ = strconv.ParseBool(os.Getenv("HROTTI_USE_WEBSOCKETS"))
 	if Port == "" {
 		Port = "1883"
 	}
@@ -50,19 +55,37 @@ func init() {
 
 func main() {
 	configureLogger(os.Stdout, ioutil.Discard, os.Stderr)
-	ln, err := net.Listen("tcp", config.Server)
-	if err != nil {
-		ERROR.Println(err.Error())
-		os.Exit(1)
-	}
-	INFO.Println("Started MQTT Broker on", config.Server)
-	for {
-		conn, err := ln.Accept()
-		INFO.Println("New incoming connection", conn.RemoteAddr())
+	if WebSocket {
+		var server websocket.Server
+		server.Handshake = func(c *websocket.Config, req *http.Request) (err error) {
+			INFO.Println(c.Protocol)
+			return err
+		}
+		server.Handler = func(ws *websocket.Conn) {
+			ws.PayloadType = websocket.BinaryFrame
+			INFO.Println("New incoming websocket connection", ws.RemoteAddr())
+			InitClient(ws)
+		}
+		http.Handle("/mqtt", server.Handler)
+		err := http.ListenAndServe(config.Server, nil)
+		if err != nil {
+			panic("ListenAndServe: " + err.Error())
+		}
+	} else {
+		ln, err := net.Listen("tcp", config.Server)
 		if err != nil {
 			ERROR.Println(err.Error())
-			continue
+			os.Exit(1)
 		}
-		go InitClient(conn)
+		INFO.Println("Started MQTT Broker on", config.Server)
+		for {
+			conn, err := ln.Accept()
+			INFO.Println("New incoming connection", conn.RemoteAddr())
+			if err != nil {
+				ERROR.Println(err.Error())
+				continue
+			}
+			go InitClient(conn)
+		}
 	}
 }

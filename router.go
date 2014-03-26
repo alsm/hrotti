@@ -1,7 +1,6 @@
 package main
 
 import (
-	//"container/heap"
 	"fmt"
 	"sync"
 )
@@ -14,6 +13,11 @@ func NewNode(name string) *Node {
 		Sub:     make(map[*Client]byte),
 		Nodes:   make(map[string]*Node),
 	}
+}
+
+type Entry struct {
+	Client *Client
+	Qos    byte
 }
 
 type Node struct {
@@ -115,54 +119,83 @@ func (n *Node) DeleteSub(client *Client, subscription []string, complete chan bo
 	}
 }
 
-func (n *Node) DeliverMessage(topic []string, message *publishPacket) {
+func (n *Node) FindRecipients(topic []string, recipients chan *Entry, wg *sync.WaitGroup) {
 	n.RLock()
 	defer n.RUnlock()
+	defer wg.Done()
 	for client, subQos := range n.HashSub {
-		if client.connected {
-			deliveryMessage := message.Copy()
-			deliveryMessage.Qos = calcQos(subQos, message.Qos)
-
-			switch deliveryMessage.Qos {
-			case 0:
-				client.outboundMessages.Push(deliveryMessage)
-			case 1, 2:
-				deliveryMessage.messageId = client.getId()
-				client.outboundMessages.Push(deliveryMessage)
-			}
-		}
+		recipients <- &Entry{client, subQos}
 	}
 	switch x := len(topic); {
 	case x > 0:
 		if node, ok := n.Nodes[topic[0]]; ok {
-			go node.DeliverMessage(topic[1:], message)
+			wg.Add(1)
+			go node.FindRecipients(topic[1:], recipients, wg)
 			return
 		}
 		if node, ok := n.Nodes["+"]; ok {
-			go node.DeliverMessage(topic[1:], message)
+			wg.Add(1)
+			go node.FindRecipients(topic[1:], recipients, wg)
 			return
 		}
 	case x == 0:
 		for client, subQos := range n.Sub {
-			if client.connected {
-				deliveryMessage := message.Copy()
-				deliveryMessage.Qos = calcQos(subQos, message.Qos)
-
-				switch deliveryMessage.Qos {
-				case 0:
-					client.outboundMessages.Push(deliveryMessage)
-				case 1, 2:
-					deliveryMessage.messageId = client.getId()
-					client.outboundMessages.Push(deliveryMessage)
-				}
-			}
+			recipients <- &Entry{client, subQos}
 		}
 		return
 	}
 }
 
-func calcQos(a, b byte) byte {
+func (n *Node) DeliverMessage(topic []string, message *publishPacket) {
+	var treeWorkers sync.WaitGroup
+	finished := make(chan bool)
+	recipients := make(chan *Entry, 10)
+	deliverList := make(map[*Client]byte)
+
+	treeWorkers.Add(1)
+	go func() {
+		treeWorkers.Wait()
+		close(finished)
+	}()
+	go n.FindRecipients(topic, recipients, &treeWorkers)
+
+FindRecipientsLoop:
+	for {
+		select {
+		case entry := <-recipients:
+			if currQos, ok := deliverList[entry.Client]; ok {
+				deliverList[entry.Client] = calcMaxQos(currQos, entry.Qos)
+			} else {
+				deliverList[entry.Client] = entry.Qos
+			}
+		case <-finished:
+			break FindRecipientsLoop
+		}
+	}
+
+	for client, subQos := range deliverList {
+		deliveryMessage := message.Copy()
+		deliveryMessage.Qos = calcMinQos(subQos, message.Qos)
+
+		switch deliveryMessage.Qos {
+		case 0:
+			client.outboundMessages.Push(deliveryMessage)
+		case 1, 2:
+			deliveryMessage.messageId = client.getId()
+			client.outboundMessages.Push(deliveryMessage)
+		}
+	}
+}
+
+func calcMinQos(a, b byte) byte {
 	if a < b {
+		return a
+	}
+	return b
+}
+
+func calcMaxQos(a, b byte) byte {
+	if a > b {
 		return a
 	}
 	return b

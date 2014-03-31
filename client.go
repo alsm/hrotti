@@ -22,7 +22,7 @@ type Client struct {
 	topicSpace       string
 	outboundMessages *msgQueue
 	stop             chan bool
-	lastSeen         time.Time
+	resetTimer       chan bool
 	cleanSession     bool
 	willMessage      *publishPacket
 }
@@ -114,6 +114,23 @@ func (c *Client) Remove() {
 		clients.Lock()
 		delete(clients.list, c.clientId)
 		clients.Unlock()
+		inboundPersist.Close(c)
+		outboundPersist.Close(c)
+	}
+}
+
+func (c *Client) KeepAliveTimer() {
+	for {
+		select {
+		case <-c.resetTimer:
+			break
+		case <-time.After(time.Duration(c.keepAlive*2) * time.Second):
+			ERROR.Println(c.clientId, "has timed out")
+			c.Stop(true)
+			c.Remove()
+		case <-c.stop:
+			return
+		}
 	}
 }
 
@@ -127,7 +144,6 @@ func (c *Client) Stop(sendWill bool) {
 }
 
 func (c *Client) Start(cp *connectPacket) {
-
 	if cp.cleanSession == 1 {
 		c.cleanSession = true
 	}
@@ -142,6 +158,12 @@ func (c *Client) Start(cp *connectPacket) {
 	} else {
 		c.willMessage = nil
 	}
+
+	if c.cleanSession || !inboundPersist.Exists(c) || !outboundPersist.Exists(c) {
+		inboundPersist.Open(c)
+		outboundPersist.Open(c)
+	}
+
 	c.genMsgIds()
 	go c.Receive()
 	go c.Send()
@@ -149,10 +171,6 @@ func (c *Client) Start(cp *connectPacket) {
 	ca.returnCode = CONN_ACCEPTED
 	c.outboundMessages.Push(ca)
 	c.connected = true
-}
-
-func (c *Client) resetLastSeenTime() {
-	c.lastSeen = time.Now()
 }
 
 func validateClientId(clientId string) bool {
@@ -206,6 +224,8 @@ func (c *Client) Receive() {
 			}
 		}
 
+		c.resetTimer <- true
+
 		switch cph.MessageType {
 		case DISCONNECT:
 			INFO.Println("Received DISCONNECT from", c.clientId)
@@ -220,6 +240,7 @@ func (c *Client) Receive() {
 			pp.FixedHeader = cph
 			pp.Unpack(body)
 			PROTOCOL.Println("Received PUBLISH from", c.clientId, pp.topicName)
+			inboundPersist.Add(c, pp.messageId, pp)
 			c.rootNode.DeliverMessage(strings.Split(pp.topicName, "/"), pp)
 			switch pp.Qos {
 			case 1:
@@ -236,9 +257,10 @@ func (c *Client) Receive() {
 			pa.FixedHeader = cph
 			pa.Unpack(body)
 			if c.inUse(pa.messageId) {
+				outboundPersist.Delete(c, pa.messageId)
 				c.freeId(pa.messageId)
 			} else {
-				ERROR.Println("Received a PUBCOMP for unknown msgid", pa.messageId, "from", c.clientId)
+				ERROR.Println("Received a PUBACK for unknown msgid", pa.messageId, "from", c.clientId)
 			}
 		case PUBREC:
 			pr := New(PUBREC).(*pubrecPacket)
@@ -263,6 +285,7 @@ func (c *Client) Receive() {
 			pc.FixedHeader = cph
 			pc.Unpack(body)
 			if c.inUse(pc.messageId) {
+				outboundPersist.Delete(c, pc.messageId)
 				c.freeId(pc.messageId)
 			} else {
 				ERROR.Println("Received a PUBCOMP for unknown msgid", pc.messageId, "from", c.clientId)
@@ -307,6 +330,12 @@ func (c *Client) Send() {
 		select {
 		case <-c.outboundMessages.ready:
 			msg := c.outboundMessages.Pop()
+			switch msg.Type() {
+			case PUBREL:
+				outboundPersist.Replace(c, msg.GetMsgId(), msg)
+			case PUBACK, PUBCOMP:
+				inboundPersist.Delete(c, msg.GetMsgId())
+			}
 			c.bufferedConn.Write(msg.Pack())
 			c.bufferedConn.Flush()
 		case <-c.stop:

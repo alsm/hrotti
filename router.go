@@ -151,6 +151,7 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket) {
 	finished := make(chan bool)
 	recipients := make(chan *Entry, 10)
 	deliverList := make(map[*Client]byte)
+	persistList := make(map[*Client]*publishPacket)
 
 	treeWorkers.Add(1)
 	go func() {
@@ -164,26 +165,34 @@ FindRecipientsLoop:
 		select {
 		case entry := <-recipients:
 			if currQos, ok := deliverList[entry.Client]; ok {
-				deliverList[entry.Client] = calcMaxQos(currQos, entry.Qos)
+				deliverList[entry.Client] = calcMinQos(calcMaxQos(currQos, entry.Qos), message.Qos)
 			} else {
-				deliverList[entry.Client] = entry.Qos
+				deliverList[entry.Client] = calcMinQos(entry.Qos, message.Qos)
 			}
 		case <-finished:
 			break FindRecipientsLoop
 		}
 	}
 
+	zeroCopy := message.Copy()
+	zeroCopy.Qos = 0
 	for client, subQos := range deliverList {
-		deliveryMessage := message.Copy()
-		deliveryMessage.Qos = calcMinQos(subQos, message.Qos)
-
-		switch deliveryMessage.Qos {
+		switch subQos {
 		case 0:
-			client.outboundMessages.Push(deliveryMessage)
-		case 1, 2:
-			deliveryMessage.messageId = client.getId()
-			client.outboundMessages.Push(deliveryMessage)
+			client.outboundMessages.Push(zeroCopy)
 		}
+		if subQos > 0 {
+			deliveryMessage := message.Copy()
+			deliveryMessage.Qos = subQos
+			deliveryMessage.messageId = client.getId()
+			persistList[client] = deliveryMessage
+		}
+	}
+
+	outboundPersist.AddBatch(persistList)
+
+	for client, deliveryMessage := range persistList {
+		client.outboundMessages.Push(deliveryMessage)
 	}
 }
 

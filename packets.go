@@ -10,7 +10,10 @@ import (
 type ControlPacket interface {
 	Pack() []byte
 	Unpack([]byte)
+	Type() uint8
+	GetMsgId() msgId
 	String() string
+	//Validate() bool
 }
 
 var packetNames = map[uint8]string{
@@ -300,6 +303,14 @@ func (c *connectPacket) Validate() byte {
 	return CONN_ACCEPTED
 }
 
+func (c *connectPacket) GetMsgId() msgId {
+	return 0
+}
+
+func (c *connectPacket) Type() uint8 {
+	return CONNECT
+}
+
 //CONNACK packet
 
 type connackPacket struct {
@@ -327,6 +338,14 @@ func (ca *connackPacket) Unpack(packet []byte) {
 	ca.returnCode = packet[1]
 }
 
+func (ca *connackPacket) GetMsgId() msgId {
+	return 0
+}
+
+func (ca *connackPacket) Type() uint8 {
+	return CONNACK
+}
+
 //DISCONNECT packet
 
 type disconnectPacket struct {
@@ -343,6 +362,14 @@ func (d *disconnectPacket) Pack() []byte {
 }
 
 func (d *disconnectPacket) Unpack(packet []byte) {
+}
+
+func (d *disconnectPacket) GetMsgId() msgId {
+	return 0
+}
+
+func (d *disconnectPacket) Type() uint8 {
+	return DISCONNECT
 }
 
 //PUBLISH packet
@@ -392,6 +419,14 @@ func (p *publishPacket) Copy() *publishPacket {
 	return newP
 }
 
+func (p *publishPacket) GetMsgId() msgId {
+	return p.messageId
+}
+
+func (p *publishPacket) Type() uint8 {
+	return PUBLISH
+}
+
 //PUBACK packet
 
 type pubackPacket struct {
@@ -411,6 +446,14 @@ func (pa *pubackPacket) Pack() []byte {
 
 func (pa *pubackPacket) Unpack(packet []byte) {
 	pa.messageId = bytesToMsgId(packet[:2])
+}
+
+func (pa *pubackPacket) GetMsgId() msgId {
+	return pa.messageId
+}
+
+func (p *pubackPacket) Type() uint8 {
+	return PUBACK
 }
 
 //PUBREC packet
@@ -434,6 +477,14 @@ func (pr *pubrecPacket) Unpack(packet []byte) {
 	pr.messageId = bytesToMsgId(packet[:2])
 }
 
+func (pr *pubrecPacket) GetMsgId() msgId {
+	return pr.messageId
+}
+
+func (pr *pubrecPacket) Type() uint8 {
+	return PUBREC
+}
+
 //PUBREL packet
 
 type pubrelPacket struct {
@@ -455,6 +506,14 @@ func (pr *pubrelPacket) Unpack(packet []byte) {
 	pr.messageId = bytesToMsgId(packet[:2])
 }
 
+func (pr *pubrelPacket) GetMsgId() msgId {
+	return pr.messageId
+}
+
+func (pr *pubrelPacket) Type() uint8 {
+	return PUBREL
+}
+
 //PUBCOMP packet
 
 type pubcompPacket struct {
@@ -474,6 +533,14 @@ func (pc *pubcompPacket) Pack() []byte {
 
 func (pc *pubcompPacket) Unpack(packet []byte) {
 	pc.messageId = bytesToMsgId(packet[:2])
+}
+
+func (pc *pubcompPacket) GetMsgId() msgId {
+	return pc.messageId
+}
+
+func (pc *pubcompPacket) Type() uint8 {
+	return PUBCOMP
 }
 
 //SUBSCRIBE packet
@@ -512,6 +579,14 @@ func (s *subscribePacket) Unpack(packet []byte) {
 	}
 }
 
+func (s *subscribePacket) GetMsgId() msgId {
+	return s.messageId
+}
+
+func (s *subscribePacket) Type() uint8 {
+	return SUBSCRIBE
+}
+
 //SUBACK packet
 
 type subackPacket struct {
@@ -535,6 +610,14 @@ func (sa *subackPacket) Pack() []byte {
 
 func (sa *subackPacket) Unpack(packet []byte) {
 	sa.messageId = bytesToMsgId(packet[:2])
+}
+
+func (sa *subackPacket) GetMsgId() msgId {
+	return sa.messageId
+}
+
+func (sa *subackPacket) Type() uint8 {
+	return SUBACK
 }
 
 //UNSUBSCRIBE packet
@@ -569,6 +652,14 @@ func (u *unsubscribePacket) Unpack(packet []byte) {
 	}
 }
 
+func (u *unsubscribePacket) GetMsgId() msgId {
+	return u.messageId
+}
+
+func (u *unsubscribePacket) Type() uint8 {
+	return UNSUBSCRIBE
+}
+
 //UNSUBACK packet
 
 type unsubackPacket struct {
@@ -590,6 +681,14 @@ func (ua *unsubackPacket) Unpack(packet []byte) {
 	ua.messageId = bytesToMsgId(packet[:2])
 }
 
+func (ua *unsubackPacket) GetMsgId() msgId {
+	return ua.messageId
+}
+
+func (ua *unsubackPacket) Type() uint8 {
+	return UNSUBACK
+}
+
 //PINGREQ packet
 
 type pingreqPacket struct {
@@ -608,6 +707,14 @@ func (pr *pingreqPacket) Pack() []byte {
 func (pr *pingreqPacket) Unpack(packet []byte) {
 }
 
+func (pr *pingreqPacket) GetMsgId() msgId {
+	return 0
+}
+
+func (pr *pingreqPacket) Type() uint8 {
+	return PINGREQ
+}
+
 //PINGRESP packet
 
 type pingrespPacket struct {
@@ -624,4 +731,12 @@ func (pr *pingrespPacket) Pack() []byte {
 }
 
 func (pr *pingrespPacket) Unpack(packet []byte) {
+}
+
+func (pr *pingrespPacket) GetMsgId() msgId {
+	return 0
+}
+
+func (pr *pingrespPacket) Type() uint8 {
+	return PINGRESP
 }

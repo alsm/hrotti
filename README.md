@@ -11,7 +11,7 @@ HROTTI_USE_WEBSOCKETS - true or false (default) to listen for websocket connecti
 
 Alternatively a configuration file in json can be provided allowing the creation of multiple listeners, currently all listeners share the same root node in the topic tree, in the future this should be configurable. To pass a configuration file use the command line option "-conf", for example;
 ```
-    hrotti -conf config.json
+hrotti -conf config.json
 ```
 The configuration expects an array called "Listeners" with each element in the array being an object that can have the following defined;
 

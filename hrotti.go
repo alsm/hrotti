@@ -31,7 +31,7 @@ var clients struct {
 }
 
 type ConfigObject struct {
-	Listeners []*ListenerConfig `json:"Listeners"`
+	Listeners []*ListenerConfig `json:"listeners"`
 }
 
 var config ConfigObject

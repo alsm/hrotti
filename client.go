@@ -184,10 +184,15 @@ func (c *Client) SetRootNode(node *Node) {
 func (c *Client) AddSubscription(topic string, qos byte) {
 	complete := make(chan bool, 1)
 	defer close(complete)
-	c.rootNode.AddSub(c, strings.Split(topic, "/"), qos, complete)
+	topicArr := strings.Split(topic, "/")
+	if plugin, ok := pluginNodes[topicArr[0]]; ok {
+		go plugin.AddSub(c, topicArr, qos, complete)
+	} else {
+		c.rootNode.AddSub(c, topicArr, qos, complete)
+	}
 	<-complete
 	if strings.ContainsAny(topic, "+") {
-		c.rootNode.FindRetainedForPlus(c, strings.Split(topic, "/"))
+		c.rootNode.FindRetainedForPlus(c, topicArr)
 	}
 	INFO.Println("Subscription made for", c.clientId, topic)
 	return
@@ -224,7 +229,7 @@ func (c *Client) Receive() {
 			}
 		}
 
-		c.resetTimer <- true
+		//c.resetTimer <- true
 
 		switch cph.MessageType {
 		case DISCONNECT:

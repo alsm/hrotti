@@ -6,6 +6,19 @@ import (
 )
 
 var rootNode *Node = NewNode("")
+var pluginNodes map[string]Plugin
+
+func init() {
+	pluginNodes = make(map[string]Plugin)
+	tPlugin := &TwitterPlugin{}
+	err := tPlugin.Init()
+	if err != nil {
+		ERROR.Println("Failed to initialise twitter plugin", err.Error())
+	} else {
+		INFO.Println("Twitter plugin initialised")
+		pluginNodes["$twitter"] = tPlugin
+	}
+}
 
 func NewNode(name string) *Node {
 	return &Node{Name: name,

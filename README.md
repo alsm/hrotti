@@ -40,7 +40,7 @@ An example configuration file is shown below
 
 The current persistence mechanism is in memory only.
 
-I've just added a new feature, it's raw but there is a plugin that will allow you to subscribe to a search term from the twitter streams api [](https://dev.twitter.com/docs/api/streaming). Currently the plugin only allows you track keywords. Also the twitter api only allows you to make one connection to the streams endpoints at a time, each client that subscribes will change the messages coming through and previous clients will stay subscribed to the new feed.
+I've just added a new feature, it's raw but there is a plugin that will allow you to subscribe to a search term from the twitter streams api [https://dev.twitter.com/docs/api/streaming](https://dev.twitter.com/docs/api/streaming). Currently the plugin only allows you track keywords. Also the twitter api only allows you to make one connection to the streams endpoints at a time, each client that subscribes will change the messages coming through and previous clients will stay subscribed to the new feed.
 
 To enable the plugin you need to create a configuration file called twitter_plugin_config.json that goes in the same directory that Hrotti is being run from, currently 4 things are required to be defined in a single object as per the example below;
 ```
@@ -51,5 +51,5 @@ To enable the plugin you need to create a configuration file called twitter_plug
 	"accessSecret":"<secret>"
 }
 ```
-To use the functionality make a subscription to $twitter/<search terms>
+To use the functionality make a subscription to $twitter/_keyword_  
 Messages are delivered to subscribers at QoS0 the topic of the message is the screen name of the tweeter and the content of the message is the body of the tweet.

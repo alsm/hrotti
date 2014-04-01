@@ -24,7 +24,16 @@ type TwitterPlugin struct {
 	stop       chan bool
 }
 
-func (tp *TwitterPlugin) Init() error {
+func init() {
+	pluginMutex.Lock()
+	if pluginNodes == nil {
+		pluginNodes = make(map[string]Plugin)
+	}
+	pluginNodes["$twitter"] = &TwitterPlugin{}
+	pluginMutex.Unlock()
+}
+
+func (tp *TwitterPlugin) Initialise() error {
 	if err := tp.ReadConfig(); err != nil {
 		return err
 	}
@@ -63,6 +72,7 @@ func (tp *TwitterPlugin) DeleteSub(client *Client, complete chan bool) {
 	defer tp.Unlock()
 	delete(tp.Subscribed, client)
 	if len(tp.Subscribed) == 0 {
+		INFO.Println("All subscriptions gone, closing twitter connection")
 		close(tp.stop)
 		tp.conn.Close()
 	}

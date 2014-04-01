@@ -78,6 +78,7 @@ func init() {
 }
 
 func main() {
+	StartPlugins()
 	for _, listener := range config.Listeners {
 		go func(l *ListenerConfig) {
 			serverAddress := l.Host + ":" + l.Port

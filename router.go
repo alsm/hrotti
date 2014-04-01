@@ -6,19 +6,6 @@ import (
 )
 
 var rootNode *Node = NewNode("")
-var pluginNodes map[string]Plugin
-
-func init() {
-	pluginNodes = make(map[string]Plugin)
-	tPlugin := &TwitterPlugin{}
-	err := tPlugin.Init()
-	if err != nil {
-		ERROR.Println("Failed to initialise twitter plugin", err.Error())
-	} else {
-		INFO.Println("Twitter plugin initialised")
-		pluginNodes["$twitter"] = tPlugin
-	}
-}
 
 func NewNode(name string) *Node {
 	return &Node{Name: name,
@@ -129,6 +116,16 @@ func (n *Node) DeleteSub(client *Client, subscription []string, complete chan bo
 	case x == 0:
 		delete(n.Sub, client)
 		complete <- true
+	}
+}
+
+func (n *Node) DeleteSubAll(client *Client) {
+	n.Lock()
+	defer n.Unlock()
+	delete(n.HashSub, client)
+	delete(n.Sub, client)
+	for _, node := range n.Nodes {
+		go node.DeleteSubAll(client)
 	}
 }
 

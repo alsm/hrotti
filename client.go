@@ -114,6 +114,8 @@ func (c *Client) Remove() {
 		clients.Lock()
 		delete(clients.list, c.clientId)
 		clients.Unlock()
+		c.rootNode.DeleteSubAll(c)
+		DeleteSubAllPlugins(c)
 		inboundPersist.Close(c)
 		outboundPersist.Close(c)
 	}

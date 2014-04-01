@@ -71,7 +71,7 @@ func (tp *TwitterPlugin) DeleteSub(client *Client, complete chan bool) {
 	tp.Lock()
 	defer tp.Unlock()
 	delete(tp.Subscribed, client)
-	if len(tp.Subscribed) == 0 {
+	if len(tp.Subscribed) == 0 && tp.conn != nil {
 		INFO.Println("All subscriptions gone, closing twitter connection")
 		close(tp.stop)
 		tp.conn.Close()

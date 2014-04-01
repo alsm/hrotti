@@ -203,7 +203,12 @@ func (c *Client) AddSubscription(topic string, qos byte) {
 func (c *Client) RemoveSubscription(topic string) (bool, error) {
 	complete := make(chan bool)
 	defer close(complete)
-	c.rootNode.DeleteSub(c, strings.Split(topic, "/"), complete)
+	topicArr := strings.Split(topic, "/")
+	if plugin, ok := pluginNodes[topicArr[0]]; ok {
+		go plugin.DeleteSub(c, topicArr, complete)
+	} else {
+		c.rootNode.DeleteSub(c, topicArr, complete)
+	}
 	<-complete
 	return true, nil
 }

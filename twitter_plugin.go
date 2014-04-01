@@ -22,6 +22,7 @@ type TwitterPlugin struct {
 	config     *Secrets
 	Subscribed map[*Client]byte
 	stop       chan bool
+	filter     string
 }
 
 func init() {
@@ -54,17 +55,20 @@ func (tp *TwitterPlugin) AddSub(client *Client, subscription []string, qos byte,
 	}()
 	var err error
 	INFO.Println("Adding $twitter sub for", subscription[1], client.clientId)
-	if tp.conn != nil {
-		close(tp.stop)
-		tp.conn.Close()
+	if subscription[1] != tp.filter {
+		if tp.conn != nil {
+			close(tp.stop)
+			tp.conn.Close()
+		}
+		tp.stop = make(chan bool)
+		tp.conn, err = tp.client.Track(subscription[1])
+		if err != nil {
+			ERROR.Println(err.Error())
+			return
+		}
+		tp.filter = subscription[1]
+		go tp.Run()
 	}
-	tp.stop = make(chan bool)
-	tp.conn, err = tp.client.Track(subscription[1])
-	if err != nil {
-		ERROR.Println(err.Error())
-		return
-	}
-	go tp.Run()
 }
 
 func (tp *TwitterPlugin) DeleteSub(client *Client, complete chan bool) {

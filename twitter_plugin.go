@@ -75,7 +75,7 @@ func (tp *TwitterPlugin) DeleteSub(client *Client, complete chan bool) {
 		INFO.Println("All subscriptions gone, closing twitter connection")
 		close(tp.stop)
 		tp.conn.Close()
-		tp.conn == nil
+		tp.conn = nil
 	}
 	complete <- true
 }

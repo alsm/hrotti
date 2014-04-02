@@ -80,6 +80,7 @@ func (tp *TwitterPlugin) DeleteSub(client *Client, complete chan bool) {
 		close(tp.stop)
 		tp.conn.Close()
 		tp.conn = nil
+		tp.filter = ""
 	}
 	complete <- true
 }
@@ -125,7 +126,10 @@ func (tp *TwitterPlugin) Run() {
 			message.topicName = "$twitter/" + tweet.User.ScreenName
 			message.payload = []byte(tweet.Text)
 			for client, _ := range tp.Subscribed {
-				client.outboundMessages.Push(message)
+				select {
+				case client.outboundMessages <- message:
+				default:
+				}
 			}
 			tp.RUnlock()
 		case <-tp.stop:

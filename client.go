@@ -20,7 +20,8 @@ type Client struct {
 	keepAlive        uint
 	connected        bool
 	topicSpace       string
-	outboundMessages *msgQueue
+	outboundMessages chan *publishPacket
+	outboundPriority chan ControlPacket
 	stop             chan bool
 	resetTimer       chan bool
 	cleanSession     bool
@@ -33,7 +34,8 @@ func NewClient(conn net.Conn, bufferedConn *bufio.ReadWriter, clientId string) *
 	c.bufferedConn = bufferedConn
 	c.clientId = clientId
 	c.stop = make(chan bool)
-	c.outboundMessages = NewMsgQueue(1000)
+	c.outboundMessages = make(chan *publishPacket, config.maxQueueDepth)
+	c.outboundPriority = make(chan ControlPacket, config.maxQueueDepth)
 	c.rootNode = rootNode
 
 	return c
@@ -171,7 +173,7 @@ func (c *Client) Start(cp *connectPacket) {
 	go c.Send()
 	ca := New(CONNACK).(*connackPacket)
 	ca.returnCode = CONN_ACCEPTED
-	c.outboundMessages.Push(ca)
+	c.outboundPriority <- ca
 	c.connected = true
 }
 
@@ -258,11 +260,11 @@ func (c *Client) Receive() {
 			case 1:
 				pa := New(PUBACK).(*pubackPacket)
 				pa.messageId = pp.messageId
-				c.outboundMessages.PushHead(pa)
+				c.outboundPriority <- pa
 			case 2:
 				pr := New(PUBREC).(*pubrecPacket)
 				pr.messageId = pp.messageId
-				c.outboundMessages.PushHead(pr)
+				c.outboundPriority <- pr
 			}
 		case PUBACK:
 			pa := New(PUBACK).(*pubackPacket)
@@ -281,7 +283,7 @@ func (c *Client) Receive() {
 			if c.inUse(pr.messageId) {
 				prel := New(PUBREL).(*pubrelPacket)
 				prel.messageId = pr.messageId
-				c.outboundMessages.PushHead(prel)
+				c.outboundPriority <- prel
 			} else {
 				ERROR.Println("Received a PUBREC for unknown msgid", pr.messageId, "from", c.clientId)
 			}
@@ -291,7 +293,7 @@ func (c *Client) Receive() {
 			pr.Unpack(body)
 			pc := New(PUBCOMP).(*pubcompPacket)
 			pc.messageId = pr.messageId
-			c.outboundMessages.PushHead(pc)
+			c.outboundPriority <- pc
 		case PUBCOMP:
 			pc := New(PUBCOMP).(*pubcompPacket)
 			pc.FixedHeader = cph
@@ -311,7 +313,7 @@ func (c *Client) Receive() {
 			sa := New(SUBACK).(*subackPacket)
 			sa.messageId = sp.messageId
 			sa.grantedQoss = append(sa.grantedQoss, byte(sp.qoss[0]))
-			c.outboundMessages.PushHead(sa)
+			c.outboundPriority <- sa
 		case UNSUBSCRIBE:
 			PROTOCOL.Println("Received UNSUBSCRIBE from", c.clientId)
 			up := New(UNSUBSCRIBE).(*unsubscribePacket)
@@ -320,10 +322,10 @@ func (c *Client) Receive() {
 			c.RemoveSubscription(up.topics[0])
 			ua := New(UNSUBACK).(*unsubackPacket)
 			ua.messageId = up.messageId
-			c.outboundMessages.PushHead(ua)
+			c.outboundPriority <- ua
 		case PINGREQ:
 			presp := New(PINGRESP).(*pingrespPacket)
-			c.outboundMessages.PushHead(presp)
+			c.outboundPriority <- presp
 		}
 	}
 	select {
@@ -338,10 +340,13 @@ func (c *Client) Receive() {
 }
 
 func (c *Client) Send() {
+	defer close(c.outboundMessages)
+	defer close(c.outboundPriority)
 	for {
 		select {
-		case <-c.outboundMessages.ready:
-			msg := c.outboundMessages.Pop()
+		case <-c.stop:
+			return
+		case msg := <-c.outboundPriority:
 			switch msg.Type() {
 			case PUBREL:
 				outboundPersist.Replace(c, msg.GetMsgId(), msg)
@@ -350,8 +355,9 @@ func (c *Client) Send() {
 			}
 			c.bufferedConn.Write(msg.Pack())
 			c.bufferedConn.Flush()
-		case <-c.stop:
-			return
+		case msg := <-c.outboundMessages:
+			c.bufferedConn.Write(msg.Pack())
+			c.bufferedConn.Flush()
 		}
 	}
 }

@@ -65,7 +65,10 @@ func (n *Node) AddSub(client *Client, subscription []string, qos byte, complete 
 		n.Sub[client] = qos
 		complete <- true
 		if n.Retained != nil {
-			client.outboundMessages.Push(n.Retained)
+			select {
+			case client.outboundMessages <- n.Retained:
+			default:
+			}
 		}
 	}
 }
@@ -86,7 +89,10 @@ func (n *Node) FindRetainedForPlus(client *Client, subscription []string) {
 		}
 	case x == 0:
 		if n.Retained != nil {
-			client.outboundMessages.Push(n.Retained)
+			select {
+			case client.outboundMessages <- n.Retained:
+			default:
+			}
 		}
 	}
 }
@@ -98,7 +104,10 @@ func (n *Node) SendRetainedRecursive(client *Client) {
 		go node.SendRetainedRecursive(client)
 	}
 	if n.Retained != nil {
-		client.outboundMessages.Push(n.Retained)
+		select {
+		case client.outboundMessages <- n.Retained:
+		default:
+		}
 	}
 }
 
@@ -189,7 +198,10 @@ FindRecipientsLoop:
 	for client, subQos := range deliverList {
 		switch subQos {
 		case 0:
-			client.outboundMessages.Push(zeroCopy)
+			select {
+			case client.outboundMessages <- zeroCopy:
+			default:
+			}
 		}
 		if subQos > 0 {
 			deliveryMessage := message.Copy()
@@ -202,7 +214,10 @@ FindRecipientsLoop:
 	outboundPersist.AddBatch(persistList)
 
 	for client, deliveryMessage := range persistList {
-		client.outboundMessages.Push(deliveryMessage)
+		select {
+		case client.outboundMessages <- deliveryMessage:
+		default:
+		}
 	}
 }
 

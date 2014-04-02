@@ -31,7 +31,8 @@ var clients struct {
 }
 
 type ConfigObject struct {
-	Listeners []*ListenerConfig `json:"listeners"`
+	maxQueueDepth int               `json:"maxQueueDepth"`
+	Listeners     []*ListenerConfig `json:"listeners"`
 }
 
 var config ConfigObject
@@ -56,6 +57,7 @@ func init() {
 
 	var configFile string
 	flag.StringVar(&configFile, "conf", "", "A configuration file")
+	flag.IntVar(&config.maxQueueDepth, "maxqd", 200, "Maximum unacknowledged message queue depth")
 	flag.Parse()
 
 	if configFile == "" {

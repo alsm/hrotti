@@ -207,7 +207,7 @@ func (c *Client) RemoveSubscription(topic string) (bool, error) {
 	defer close(complete)
 	topicArr := strings.Split(topic, "/")
 	if plugin, ok := pluginNodes[topicArr[0]]; ok {
-		go plugin.DeleteSub(c, complete)
+		go plugin.DeleteSub(c, topicArr, complete)
 	} else {
 		c.rootNode.DeleteSub(c, topicArr, complete)
 	}

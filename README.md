@@ -53,3 +53,14 @@ To enable the plugin you need to create a configuration file called twitter_plug
 ```
 To use the functionality make a subscription to $twitter/_keyword_  
 Messages are delivered to subscribers at QoS0 the topic of the message is the screen name of the tweeter and the content of the message is the body of the tweet.
+
+And on the topic of plugins there is another new one, a redirect plugin; messages published to one topic will be republished on another. For example a message published to hampshire/trees would also be delivered to subscribers to england/trees. Why would you want to do this? You want to set up a consolidation endpoint without having all your clients have to make multiple subscriptions. Perhaps extending the last example you know that there will be new relevant topics coming along and you can't change your currently deployed client configurations.
+The messages received by subscribers to the 2nd topic retain the original topic name they were published to, ie in the example above a message published to hampshire/trees and delivered to subscribers to england/trees would still have hampshire/trees in the topic, particularly useful if the topic structure has some implied meaning about the message.
+
+To enable the redirect plugin it looks for a configuration file call redirect_plugin_config.json that also goes in the same directory that Hrotti is being run from. The configuration is a list of mappings, source topic to destination topic;
+```
+{
+	"hampshire/trees":"england/trees"
+}
+```
+The plugin does support multiple redirect entries but will not protect you from setting up circular redirects. Also in theory wildcards on the left hand side should work but I haven't tested it yet. Wildcards on the right will not work but right now they are not validated.

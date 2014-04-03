@@ -1,10 +1,8 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"github.com/darkhelmet/twitterstream"
-	"os"
 	"sync"
 )
 
@@ -35,7 +33,7 @@ func init() {
 }
 
 func (tp *TwitterPlugin) Initialise() error {
-	if err := tp.ReadConfig(); err != nil {
+	if err := ReadPluginConfig("twitter_plugin_config.json", &tp.config); err != nil {
 		return err
 	}
 	if tp.config.ConsumerKey == "" || tp.config.ConsumerSecret == "" || tp.config.AccessToken == "" || tp.config.AccessSecret == "" {
@@ -71,7 +69,7 @@ func (tp *TwitterPlugin) AddSub(client *Client, subscription []string, qos byte,
 	}
 }
 
-func (tp *TwitterPlugin) DeleteSub(client *Client, complete chan bool) {
+func (tp *TwitterPlugin) DeleteSub(client *Client, topic []string, complete chan bool) {
 	tp.Lock()
 	defer tp.Unlock()
 	delete(tp.Subscribed, client)
@@ -83,20 +81,6 @@ func (tp *TwitterPlugin) DeleteSub(client *Client, complete chan bool) {
 		tp.filter = ""
 	}
 	complete <- true
-}
-
-func (tp *TwitterPlugin) ReadConfig() error {
-	file, err := os.Open("twitter_plugin_config.json")
-	if err != nil {
-		return err
-	}
-	decoder := json.NewDecoder(file)
-
-	err = decoder.Decode(&tp.config)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func (tp *TwitterPlugin) Run() {

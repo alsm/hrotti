@@ -48,7 +48,7 @@ func (rp *RedirectPlugin) DeleteSub(client *Client, topic []string, complete cha
 	rp.Lock()
 	defer rp.Unlock()
 	if topic != nil {
-		source := strings.Join(topic[1:])
+		source := strings.Join(topic[1:], "")
 		rp.fauxClient.RemoveSubscription(source)
 		delete(rp.Redirects, source)
 	}

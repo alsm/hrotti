@@ -185,21 +185,33 @@ func (c *Client) SetRootNode(node *Node) {
 	c.rootNode = node
 }
 
-func (c *Client) AddSubscription(topic string, qos byte) {
-	complete := make(chan bool, 1)
-	defer close(complete)
-	topicArr := strings.Split(topic, "/")
-	if plugin, ok := pluginNodes[topicArr[0]]; ok {
-		go plugin.AddSub(c, topicArr, qos, complete)
-	} else {
-		c.rootNode.AddSub(c, topicArr, qos, complete)
+func (c *Client) AddSubscription(topics []string, qoss []byte) []byte {
+	var subWorkers sync.WaitGroup
+	rQos := make([]byte, len(qoss))
+
+	for i, topic := range topics {
+		subWorkers.Add(1)
+		go func(topic string, qos byte, entry *byte, wg *sync.WaitGroup) {
+			defer wg.Done()
+			complete := make(chan byte, 1)
+			defer close(complete)
+			topicArr := strings.Split(topic, "/")
+			if plugin, ok := pluginNodes[topicArr[0]]; ok {
+				go plugin.AddSub(c, topicArr, qos, complete)
+			} else {
+				c.rootNode.AddSub(c, topicArr, qos, complete)
+			}
+			*entry = <-complete
+			if strings.ContainsAny(topic, "+") {
+				c.rootNode.FindRetainedForPlus(c, topicArr)
+			}
+			INFO.Println("Subscription made for", c.clientId, topic)
+		}(topic, qoss[i], &rQos[i], &subWorkers)
 	}
-	<-complete
-	if strings.ContainsAny(topic, "+") {
-		c.rootNode.FindRetainedForPlus(c, topicArr)
-	}
-	INFO.Println("Subscription made for", c.clientId, topic)
-	return
+	subWorkers.Wait()
+	INFO.Println("Returned QOS values", rQos)
+
+	return rQos
 }
 
 func (c *Client) RemoveSubscription(topic string) (bool, error) {
@@ -255,7 +267,7 @@ func (c *Client) Receive() {
 			pp.Unpack(body)
 			PROTOCOL.Println("Received PUBLISH from", c.clientId, pp.topicName)
 			inboundPersist.Add(c, pp.messageId, pp)
-			c.rootNode.DeliverMessage(strings.Split(pp.topicName, "/"), pp)
+			go c.rootNode.DeliverMessage(strings.Split(pp.topicName, "/"), pp)
 			switch pp.Qos {
 			case 1:
 				pa := New(PUBACK).(*pubackPacket)
@@ -309,10 +321,10 @@ func (c *Client) Receive() {
 			sp := New(SUBSCRIBE).(*subscribePacket)
 			sp.FixedHeader = cph
 			sp.Unpack(body)
-			c.AddSubscription(sp.topics[0], sp.qoss[0])
+			rQos := c.AddSubscription(sp.topics, sp.qoss)
 			sa := New(SUBACK).(*subackPacket)
 			sa.messageId = sp.messageId
-			sa.grantedQoss = append(sa.grantedQoss, byte(sp.qoss[0]))
+			sa.grantedQoss = append(sa.grantedQoss, rQos...)
 			c.outboundPriority <- sa
 		case UNSUBSCRIBE:
 			PROTOCOL.Println("Received UNSUBSCRIBE from", c.clientId)

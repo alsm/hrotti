@@ -44,10 +44,10 @@ func (tp *TwitterPlugin) Initialise() error {
 	return nil
 }
 
-func (tp *TwitterPlugin) AddSub(client *Client, subscription []string, qos byte, complete chan bool) {
+func (tp *TwitterPlugin) AddSub(client *Client, subscription []string, qos byte, complete chan byte) {
 	tp.Lock()
 	defer func() {
-		complete <- true
+		complete <- 0
 		tp.Subscribed[client] = qos
 		tp.Unlock()
 	}()

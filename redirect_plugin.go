@@ -29,19 +29,19 @@ func (rp *RedirectPlugin) Initialise() error {
 	rp.fauxClient = NewClient(nil, nil, "$redirectpluginclient")
 	INFO.Println("Redirects:", rp.Redirects)
 	for source, _ := range rp.Redirects {
-		rp.fauxClient.AddSubscription(source, 0)
+		rp.fauxClient.AddSubscription([]string{source}, []byte{0})
 	}
 	go rp.Run()
 	return nil
 }
 
-func (rp *RedirectPlugin) AddSub(client *Client, topic []string, qos byte, complete chan bool) {
+func (rp *RedirectPlugin) AddSub(client *Client, topic []string, qos byte, complete chan byte) {
 	rp.Lock()
 	defer rp.Unlock()
 	sourceAndDest := strings.Split(strings.Join(topic[1:], ""), ",")
 	rp.Redirects[sourceAndDest[0]] = sourceAndDest[1]
-	rp.fauxClient.AddSubscription(sourceAndDest[0], 0)
-	complete <- true
+	rp.fauxClient.AddSubscription([]string{sourceAndDest[0]}, []byte{0})
+	complete <- 0
 }
 
 func (rp *RedirectPlugin) DeleteSub(client *Client, topic []string, complete chan bool) {

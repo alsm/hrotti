@@ -45,14 +45,14 @@ func (n *Node) Print(prefix string) string {
 	return prefix + n.Name
 }
 
-func (n *Node) AddSub(client *Client, subscription []string, qos byte, complete chan bool) {
+func (n *Node) AddSub(client *Client, subscription []string, qos byte, complete chan byte) {
 	n.Lock()
 	defer n.Unlock()
 	switch x := len(subscription); {
 	case x > 0:
 		if subscription[0] == "#" {
 			n.HashSub[client] = qos
-			complete <- true
+			complete <- qos
 			go n.SendRetainedRecursive(client)
 		} else {
 			subTopic := subscription[0]
@@ -63,7 +63,7 @@ func (n *Node) AddSub(client *Client, subscription []string, qos byte, complete 
 		}
 	case x == 0:
 		n.Sub[client] = qos
-		complete <- true
+		complete <- qos
 		if n.Retained != nil {
 			select {
 			case client.outboundMessages <- n.Retained:

@@ -11,7 +11,7 @@ var pluginMutex sync.Mutex
 
 type Plugin interface {
 	Initialise() error
-	AddSub(*Client, []string, byte, chan bool)
+	AddSub(*Client, []string, byte, chan byte)
 	DeleteSub(*Client, []string, chan bool)
 }
 

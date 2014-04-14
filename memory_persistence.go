@@ -24,7 +24,7 @@ func NewMemoryPersistence() *MemoryPersistence {
 func (p *MemoryPersistence) Open(client *Client) {
 	p.Lock()
 	defer p.Unlock()
-	INFO.Println("Opening memory persistence for", client.clientId)
+	DEBUG.Println("Opening memory persistence for", client.clientId)
 	p.clients[client] = &MemoryPersistenceEntry{messages: make(map[msgId]ControlPacket)}
 }
 
@@ -41,7 +41,7 @@ func (p *MemoryPersistence) Add(client *Client, id msgId, message ControlPacket)
 	defer p.clients[client].Unlock()
 	defer p.RUnlock()
 
-	INFO.Println("Persisting", packetNames[message.Type()], "packet for", client.clientId, id)
+	DEBUG.Println("Persisting", packetNames[message.Type()], "packet for", client.clientId, id)
 	if _, ok := p.clients[client].messages[id]; ok {
 		return false
 	}
@@ -55,7 +55,7 @@ func (p *MemoryPersistence) Replace(client *Client, id msgId, message ControlPac
 	defer p.clients[client].Unlock()
 	defer p.RUnlock()
 
-	INFO.Println("Replacing persisted message for", client.clientId, id, "with", packetNames[message.Type()])
+	DEBUG.Println("Replacing persisted message for", client.clientId, id, "with", packetNames[message.Type()])
 	p.clients[client].messages[id] = message
 	return true
 }
@@ -75,7 +75,7 @@ func (p *MemoryPersistence) Delete(client *Client, id msgId) bool {
 	defer p.clients[client].Unlock()
 	defer p.RUnlock()
 
-	INFO.Println("Removing persisted message for", client.clientId)
+	DEBUG.Println("Removing persisted message for", client.clientId)
 	if _, ok := p.clients[client].messages[id]; !ok {
 		return false
 	}

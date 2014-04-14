@@ -61,12 +61,13 @@ const (
 )
 
 var connackReturnCodes = map[uint8]string{
-	0: "Connection Accepted",
-	1: "Connection Refused: Bad Protocol Version",
-	2: "Connection Refused: Client Identifier Rejected",
-	3: "Connection Refused: Server Unavailable",
-	4: "Connection Refused: Username or Password in unknown format",
-	5: "Connection Refused: Not Authorised",
+	0:   "Connection Accepted",
+	1:   "Connection Refused: Bad Protocol Version",
+	2:   "Connection Refused: Client Identifier Rejected",
+	3:   "Connection Refused: Server Unavailable",
+	4:   "Connection Refused: Username or Password in unknown format",
+	5:   "Connection Refused: Not Authorised",
+	255: "Connection Refused: Protocol Violation",
 }
 
 func msgIdToBytes(messageId msgId) []byte {
@@ -295,6 +296,7 @@ func (c *connectPacket) Validate() byte {
 		return CONN_PROTOCOL_VIOLATION
 	}
 	if c.protocolName != "MQIsdp" && c.protocolName != "MQTT" {
+		ERROR.Println("Bad protocol name", c.protocolName)
 		return CONN_PROTOCOL_VIOLATION
 	}
 	if len(c.clientIdentifier) > 65535 || len(c.username) > 65535 || len(c.password) > 65535 {

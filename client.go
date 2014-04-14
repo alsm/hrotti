@@ -17,7 +17,7 @@ type Client struct {
 	conn             net.Conn
 	bufferedConn     *bufio.ReadWriter
 	rootNode         *Node
-	keepAlive        uint
+	keepAlive        uint16
 	connected        bool
 	topicSpace       string
 	outboundMessages chan *publishPacket
@@ -34,6 +34,7 @@ func NewClient(conn net.Conn, bufferedConn *bufio.ReadWriter, clientId string) *
 	c.bufferedConn = bufferedConn
 	c.clientId = clientId
 	c.stop = make(chan bool)
+	c.resetTimer = make(chan bool, 1)
 	c.outboundMessages = make(chan *publishPacket, config.maxQueueDepth)
 	c.outboundPriority = make(chan ControlPacket, config.maxQueueDepth)
 	c.rootNode = rootNode
@@ -44,6 +45,7 @@ func NewClient(conn net.Conn, bufferedConn *bufio.ReadWriter, clientId string) *
 func InitClient(conn net.Conn) {
 	var cph FixedHeader
 	var takeover bool
+	var ok bool
 	var c *Client
 	var typeByte byte
 
@@ -74,8 +76,8 @@ func InitClient(conn net.Conn) {
 			ca.returnCode = rc
 			bufferedConn.Write(ca.Pack())
 			bufferedConn.Flush()
-			ERROR.Println(connackReturnCodes[rc], conn.RemoteAddr())
 		}
+		ERROR.Println(connackReturnCodes[rc], conn.RemoteAddr())
 		conn.Close()
 		return
 	} else {
@@ -83,21 +85,24 @@ func InitClient(conn net.Conn) {
 	}
 
 	clients.RLock()
-	if c, ok := clients.list[cp.clientIdentifier]; ok {
+	if c, ok = clients.list[cp.clientIdentifier]; ok {
 		takeover = true
-		go func() {
-			c.Lock()
-			if c.connected {
-				INFO.Println("Clientid", c.clientId, "already connected, stopping first client")
-				c.Stop(false)
-			} else {
-				INFO.Println("Durable client reconnecting", c.clientId)
-			}
-			c.conn = conn
-			c.bufferedConn = bufferedConn
-			c.Unlock()
-			go c.Start(cp)
-		}()
+		c.Lock()
+		if c.connected {
+			INFO.Println("Clientid", c.clientId, "already connected, stopping first client")
+			close(c.stop)
+			c.conn.Close()
+			time.Sleep(100 * time.Millisecond)
+		} else {
+			INFO.Println("Durable client reconnecting", c.clientId)
+		}
+		c.conn = conn
+		c.bufferedConn = bufferedConn
+		c.stop = make(chan bool)
+		c.outboundMessages = make(chan *publishPacket, config.maxQueueDepth)
+		c.outboundPriority = make(chan ControlPacket, config.maxQueueDepth)
+		c.Unlock()
+		go c.Start(cp)
 	}
 	clients.RUnlock()
 
@@ -125,26 +130,30 @@ func (c *Client) Remove() {
 
 func (c *Client) KeepAliveTimer() {
 	for {
+		t := time.NewTimer(time.Duration(float64(c.keepAlive)*1.5) * time.Second)
 		select {
-		case <-c.resetTimer:
-			break
-		case <-time.After(time.Duration(c.keepAlive*2) * time.Second):
-			ERROR.Println(c.clientId, "has timed out")
+		case _ = <-c.resetTimer:
+		case <-t.C:
+			ERROR.Println(c.clientId, "has timed out", c.keepAlive)
 			c.Stop(true)
 			c.Remove()
 		case <-c.stop:
 			return
 		}
+		t.Stop()
 	}
 }
 
 func (c *Client) Stop(sendWill bool) {
+	c.connected = false
 	close(c.stop)
 	c.conn.Close()
+	close(c.outboundMessages)
+	close(c.outboundPriority)
 	if sendWill && c.willMessage != nil {
+		INFO.Println("Sending will message for", c.clientId)
 		go c.rootNode.DeliverMessage(strings.Split(c.willMessage.topicName, "/"), c.willMessage)
 	}
-	c.connected = false
 }
 
 func (c *Client) Start(cp *connectPacket) {
@@ -162,23 +171,44 @@ func (c *Client) Start(cp *connectPacket) {
 	} else {
 		c.willMessage = nil
 	}
+	c.keepAlive = cp.keepaliveTimer
 
 	if c.cleanSession || !inboundPersist.Exists(c) || !outboundPersist.Exists(c) {
 		inboundPersist.Open(c)
 		outboundPersist.Open(c)
+	} else {
+		INFO.Println("Getting unacknowledged messages from persistence")
+		for _, msg := range outboundPersist.GetAll(c) {
+			switch msg.Type() {
+			case PUBLISH:
+				c.outboundMessages <- msg.(*publishPacket)
+			default:
+				c.outboundPriority <- msg
+			}
+		}
 	}
 
 	c.genMsgIds()
 	go c.Receive()
-	go c.Send()
 	ca := New(CONNACK).(*connackPacket)
 	ca.returnCode = CONN_ACCEPTED
-	c.outboundPriority <- ca
+	c.bufferedConn.Write(ca.Pack())
+	c.bufferedConn.Flush()
+	go c.Send()
 	c.connected = true
+	if c.keepAlive > 0 {
+		go c.KeepAliveTimer()
+	}
 }
 
 func validateClientId(clientId string) bool {
 	return true
+}
+
+func (c *Client) ResetTimer() {
+	if c.keepAlive > 0 {
+		c.resetTimer <- true
+	}
 }
 
 func (c *Client) SetRootNode(node *Node) {
@@ -209,7 +239,6 @@ func (c *Client) AddSubscription(topics []string, qoss []byte) []byte {
 		}(topic, qoss[i], &rQos[i], &subWorkers)
 	}
 	subWorkers.Wait()
-	INFO.Println("Returned QOS values", rQos)
 
 	return rQos
 }
@@ -236,9 +265,10 @@ func (c *Client) Receive() {
 
 		typeByte, err = c.bufferedConn.ReadByte()
 		if err != nil {
-			ERROR.Println(err.Error(), c.clientId)
+			ERROR.Println(err.Error(), c.clientId, c.conn.RemoteAddr())
 			break
 		}
+		c.ResetTimer()
 		cph.unpack(typeByte)
 		cph.remainingLength = decodeLength(c.bufferedConn)
 
@@ -249,10 +279,14 @@ func (c *Client) Receive() {
 				break
 			}
 		}
-
-		//c.resetTimer <- true
+		c.ResetTimer()
 
 		switch cph.MessageType {
+		case CONNECT:
+			ERROR.Println("Received second CONNECT from", c.clientId)
+			c.Stop(true)
+			c.Remove()
+			continue
 		case DISCONNECT:
 			INFO.Println("Received DISCONNECT from", c.clientId)
 			dp := New(DISCONNECT).(*disconnectPacket)
@@ -267,16 +301,19 @@ func (c *Client) Receive() {
 			pp.Unpack(body)
 			PROTOCOL.Println("Received PUBLISH from", c.clientId, pp.topicName)
 			inboundPersist.Add(c, pp.messageId, pp)
+			if pp.Retain == 1 {
+				c.rootNode.SetRetained(strings.Split(pp.topicName, "/"), pp)
+			}
 			go c.rootNode.DeliverMessage(strings.Split(pp.topicName, "/"), pp)
 			switch pp.Qos {
 			case 1:
 				pa := New(PUBACK).(*pubackPacket)
 				pa.messageId = pp.messageId
-				c.outboundPriority <- pa
+				c.HandleFlow(pa)
 			case 2:
 				pr := New(PUBREC).(*pubrecPacket)
 				pr.messageId = pp.messageId
-				c.outboundPriority <- pr
+				c.HandleFlow(pr)
 			}
 		case PUBACK:
 			pa := New(PUBACK).(*pubackPacket)
@@ -295,7 +332,7 @@ func (c *Client) Receive() {
 			if c.inUse(pr.messageId) {
 				prel := New(PUBREL).(*pubrelPacket)
 				prel.messageId = pr.messageId
-				c.outboundPriority <- prel
+				c.HandleFlow(prel)
 			} else {
 				ERROR.Println("Received a PUBREC for unknown msgid", pr.messageId, "from", c.clientId)
 			}
@@ -305,7 +342,7 @@ func (c *Client) Receive() {
 			pr.Unpack(body)
 			pc := New(PUBCOMP).(*pubcompPacket)
 			pc.messageId = pr.messageId
-			c.outboundPriority <- pc
+			c.HandleFlow(pc)
 		case PUBCOMP:
 			pc := New(PUBCOMP).(*pubcompPacket)
 			pc.FixedHeader = cph
@@ -344,32 +381,51 @@ func (c *Client) Receive() {
 	case <-c.stop:
 		return
 	default:
-		ERROR.Println("Error on socket read", c.clientId)
+		ERROR.Println("Receive error on socket read", c.clientId, c.conn.RemoteAddr())
 		c.Stop(true)
 		c.Remove()
 		return
 	}
 }
 
+func (c *Client) HandleFlow(msg ControlPacket) {
+	switch msg.Type() {
+	case PUBREL:
+		outboundPersist.Replace(c, msg.GetMsgId(), msg)
+	case PUBACK, PUBCOMP:
+		inboundPersist.Delete(c, msg.GetMsgId())
+	}
+	//send to channel if open, silently drop if channel closed
+	select {
+	case c.outboundPriority <- msg:
+	default:
+	}
+}
+
 func (c *Client) Send() {
-	defer close(c.outboundMessages)
-	defer close(c.outboundPriority)
 	for {
 		select {
 		case <-c.stop:
+			//closing c.stop signals we should return
 			return
-		case msg := <-c.outboundPriority:
-			switch msg.Type() {
-			case PUBREL:
-				outboundPersist.Replace(c, msg.GetMsgId(), msg)
-			case PUBACK, PUBCOMP:
-				inboundPersist.Delete(c, msg.GetMsgId())
+		case msg, ok := <-c.outboundPriority:
+			//ok == false means we were triggered because the channel
+			//is closed, and the msg will be nil
+			if ok {
+				_, err := c.conn.Write(msg.Pack())
+				if err != nil {
+					ERROR.Println("Error writing msg")
+				}
 			}
-			c.bufferedConn.Write(msg.Pack())
-			c.bufferedConn.Flush()
-		case msg := <-c.outboundMessages:
-			c.bufferedConn.Write(msg.Pack())
-			c.bufferedConn.Flush()
+		case msg, ok := <-c.outboundMessages:
+			//ok == false means we were triggered because the channel
+			//is closed, and the msg will be nil
+			if ok {
+				_, err := c.conn.Write(msg.Pack())
+				if err != nil {
+					ERROR.Println("Error writing msg")
+				}
+			}
 		}
 	}
 }

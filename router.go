@@ -150,18 +150,36 @@ func (n *Node) FindRecipients(topic []string, recipients chan *Entry, wg *sync.W
 		if node, ok := n.Nodes[topic[0]]; ok {
 			wg.Add(1)
 			go node.FindRecipients(topic[1:], recipients, wg)
-			return
 		}
 		if node, ok := n.Nodes["+"]; ok {
 			wg.Add(1)
 			go node.FindRecipients(topic[1:], recipients, wg)
-			return
 		}
+		return
 	case x == 0:
 		for client, subQos := range n.Sub {
 			recipients <- &Entry{client, subQos}
 		}
 		return
+	}
+}
+
+func (n *Node) SetRetained(topic []string, message *publishPacket) {
+	n.Lock()
+	defer n.Unlock()
+	switch x := len(topic); {
+	case x > 0:
+		subTopic := topic[0]
+		if _, ok := n.Nodes[subTopic]; !ok {
+			n.Nodes[subTopic] = NewNode(subTopic)
+		}
+		go n.Nodes[subTopic].SetRetained(topic[1:], message)
+	case x == 0:
+		if len(message.payload) == 0 {
+			n.Retained = nil
+		} else {
+			n.Retained = message
+		}
 	}
 }
 
@@ -196,27 +214,32 @@ FindRecipientsLoop:
 	zeroCopy := message.Copy()
 	zeroCopy.Qos = 0
 	for client, subQos := range deliverList {
-		switch subQos {
-		case 0:
-			select {
-			case client.outboundMessages <- zeroCopy:
-			default:
-			}
-		}
+		//ensure that even if the client is offline we queue the message for delivery later
 		if subQos > 0 {
 			deliveryMessage := message.Copy()
 			deliveryMessage.Qos = subQos
 			deliveryMessage.messageId = client.getId()
 			persistList[client] = deliveryMessage
 		}
+		if client.connected {
+			switch subQos {
+			case 0:
+				select {
+				case client.outboundMessages <- zeroCopy:
+				default:
+				}
+			}
+		}
 	}
 
 	outboundPersist.AddBatch(persistList)
 
 	for client, deliveryMessage := range persistList {
-		select {
-		case client.outboundMessages <- deliveryMessage:
-		default:
+		if client.connected {
+			select {
+			case client.outboundMessages <- deliveryMessage:
+			default:
+			}
 		}
 	}
 }

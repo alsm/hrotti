@@ -2,7 +2,6 @@ package main
 
 import (
 	"code.google.com/p/go.net/websocket"
-	//"code.google.com/p/leveldb-go/leveldb"
 	"flag"
 	"io"
 	"io/ioutil"
@@ -20,6 +19,7 @@ var (
 	INFO            *log.Logger
 	PROTOCOL        *log.Logger
 	ERROR           *log.Logger
+	DEBUG           *log.Logger
 	WebSocket       bool
 	inboundPersist  Persistence
 	outboundPersist Persistence
@@ -37,22 +37,26 @@ type ConfigObject struct {
 
 var config ConfigObject
 
-func configureLogger(infoHandle io.Writer, protocolHandle io.Writer, errorHandle io.Writer) {
+func configureLogger(infoHandle io.Writer, protocolHandle io.Writer, errorHandle io.Writer, debugHandle io.Writer) {
 	INFO = log.New(infoHandle,
 		"INFO: ",
 		log.Ldate|log.Ltime)
 
 	PROTOCOL = log.New(protocolHandle,
 		"PROTOCOL: ",
-		log.Ldate|log.Ltime|log.Lshortfile)
+		log.Ldate|log.Ltime)
 
 	ERROR = log.New(errorHandle,
 		"ERROR: ",
 		log.Ldate|log.Ltime|log.Lshortfile)
+
+	DEBUG = log.New(debugHandle,
+		"DEBUG: ",
+		log.Ldate|log.Ltime|log.Lshortfile)
 }
 
 func init() {
-	configureLogger(os.Stdout, ioutil.Discard, os.Stderr)
+	configureLogger(os.Stdout, ioutil.Discard, os.Stderr, ioutil.Discard)
 	clients.list = make(map[string]*Client)
 
 	var configFile string

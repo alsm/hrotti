@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime/pprof"
 	"strconv"
 	"sync"
 	"syscall"
@@ -131,6 +130,5 @@ func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
-	pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 	INFO.Println("Exiting...")
 }

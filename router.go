@@ -218,10 +218,14 @@ FindRecipientsLoop:
 		if subQos > 0 {
 			deliveryMessage := message.Copy()
 			deliveryMessage.Qos = subQos
-			deliveryMessage.messageId = client.getId()
+			select {
+			case deliveryMessage.messageId = <-client.idChan:
+			default:
+				deliveryMessage.messageId = <-internalMsgIds.idChan
+			}
 			persistList[client] = deliveryMessage
 		}
-		if client.connected {
+		if client.Connected() {
 			switch subQos {
 			case 0:
 				select {
@@ -235,7 +239,7 @@ FindRecipientsLoop:
 	outboundPersist.AddBatch(persistList)
 
 	for client, deliveryMessage := range persistList {
-		if client.connected {
+		if client.Connected() {
 			select {
 			case client.outboundMessages <- deliveryMessage:
 			default:

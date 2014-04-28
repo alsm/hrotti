@@ -8,8 +8,8 @@ type PersistenceBatchEntry struct {
 type Persistence interface {
 	Open(*Client)
 	Close(*Client)
-	Add(*Client, msgId, ControlPacket) bool
-	Replace(*Client, msgId, ControlPacket) bool
+	Add(*Client, ControlPacket) bool
+	Replace(*Client, ControlPacket) bool
 	AddBatch(map[*Client]*publishPacket)
 	Delete(*Client, msgId) bool
 	GetAll(*Client) []ControlPacket

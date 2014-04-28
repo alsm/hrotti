@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"strconv"
 	"sync"
 	"syscall"
@@ -56,7 +57,7 @@ func configureLogger(infoHandle io.Writer, protocolHandle io.Writer, errorHandle
 }
 
 func init() {
-	configureLogger(os.Stdout, ioutil.Discard, os.Stderr, ioutil.Discard)
+	configureLogger(os.Stdout, os.Stdout, os.Stderr, ioutil.Discard)
 	clients.list = make(map[string]*Client)
 
 	var configFile string
@@ -81,6 +82,8 @@ func init() {
 
 	inboundPersist = NewMemoryPersistence()
 	outboundPersist = NewMemoryPersistence()
+
+	genInternalIds()
 }
 
 func main() {
@@ -128,5 +131,6 @@ func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
+	pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 	INFO.Println("Exiting...")
 }

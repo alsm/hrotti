@@ -14,6 +14,7 @@ type ControlPacket interface {
 	SetMsgId(msgId)
 	MsgId() msgId
 	String() string
+	QoS() byte
 	//Validate() bool
 }
 
@@ -313,6 +314,10 @@ func (c *connectPacket) MsgId() msgId {
 func (c *connectPacket) SetMsgId(id msgId) {
 }
 
+func (c *connectPacket) QoS() byte {
+	return c.Qos
+}
+
 func (c *connectPacket) Type() uint8 {
 	return CONNECT
 }
@@ -351,6 +356,10 @@ func (ca *connackPacket) MsgId() msgId {
 func (c *connackPacket) SetMsgId(id msgId) {
 }
 
+func (ca *connackPacket) QoS() byte {
+	return ca.Qos
+}
+
 func (ca *connackPacket) Type() uint8 {
 	return CONNACK
 }
@@ -378,6 +387,10 @@ func (d *disconnectPacket) MsgId() msgId {
 }
 
 func (d *disconnectPacket) SetMsgId(id msgId) {
+}
+
+func (d *disconnectPacket) QoS() byte {
+	return d.Qos
 }
 
 func (d *disconnectPacket) Type() uint8 {
@@ -436,6 +449,10 @@ func (p *publishPacket) SetMsgId(id msgId) {
 	p.messageId = id
 }
 
+func (p *publishPacket) QoS() byte {
+	return p.Qos
+}
+
 func (p *publishPacket) Type() uint8 {
 	return PUBLISH
 }
@@ -467,6 +484,10 @@ func (pa *pubackPacket) MsgId() msgId {
 
 func (pa *pubackPacket) SetMsgId(id msgId) {
 	pa.messageId = id
+}
+
+func (pa *pubackPacket) QoS() byte {
+	return pa.Qos
 }
 
 func (p *pubackPacket) Type() uint8 {
@@ -502,6 +523,10 @@ func (pr *pubrecPacket) SetMsgId(id msgId) {
 	pr.messageId = id
 }
 
+func (pr *pubrecPacket) QoS() byte {
+	return pr.Qos
+}
+
 func (pr *pubrecPacket) Type() uint8 {
 	return PUBREC
 }
@@ -535,6 +560,10 @@ func (pr *pubrelPacket) SetMsgId(id msgId) {
 	pr.messageId = id
 }
 
+func (pr *pubrelPacket) QoS() byte {
+	return pr.Qos
+}
+
 func (pr *pubrelPacket) Type() uint8 {
 	return PUBREL
 }
@@ -566,6 +595,10 @@ func (pc *pubcompPacket) MsgId() msgId {
 
 func (pc *pubcompPacket) SetMsgId(id msgId) {
 	pc.messageId = id
+}
+
+func (pc *pubcompPacket) QoS() byte {
+	return pc.Qos
 }
 
 func (pc *pubcompPacket) Type() uint8 {
@@ -616,6 +649,10 @@ func (s *subscribePacket) SetMsgId(id msgId) {
 	s.messageId = id
 }
 
+func (s *subscribePacket) QoS() byte {
+	return s.Qos
+}
+
 func (s *subscribePacket) Type() uint8 {
 	return SUBSCRIBE
 }
@@ -651,6 +688,10 @@ func (sa *subackPacket) MsgId() msgId {
 
 func (sa *subackPacket) SetMsgId(id msgId) {
 	sa.messageId = id
+}
+
+func (sa *subackPacket) QoS() byte {
+	return sa.Qos
 }
 
 func (sa *subackPacket) Type() uint8 {
@@ -697,6 +738,10 @@ func (u *unsubscribePacket) SetMsgId(id msgId) {
 	u.messageId = id
 }
 
+func (u *unsubscribePacket) QoS() byte {
+	return u.Qos
+}
+
 func (u *unsubscribePacket) Type() uint8 {
 	return UNSUBSCRIBE
 }
@@ -730,6 +775,10 @@ func (ua *unsubackPacket) SetMsgId(id msgId) {
 	ua.messageId = id
 }
 
+func (ua *unsubackPacket) QoS() byte {
+	return ua.Qos
+}
+
 func (ua *unsubackPacket) Type() uint8 {
 	return UNSUBACK
 }
@@ -759,6 +808,10 @@ func (pr *pingreqPacket) MsgId() msgId {
 func (pr *pingreqPacket) SetMsgId(id msgId) {
 }
 
+func (pr *pingreqPacket) QoS() byte {
+	return pr.Qos
+}
+
 func (pr *pingreqPacket) Type() uint8 {
 	return PINGREQ
 }
@@ -786,6 +839,10 @@ func (pr *pingrespPacket) MsgId() msgId {
 }
 
 func (pr *pingrespPacket) SetMsgId(id msgId) {
+}
+
+func (pr *pingrespPacket) QoS() byte {
+	return pr.Qos
 }
 
 func (pr *pingrespPacket) Type() uint8 {

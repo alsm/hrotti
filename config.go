@@ -11,6 +11,13 @@ type ListenerConfig struct {
 	WS   bool   `json:"enable_ws,omitempty"`
 }
 
+//Current configuration struct, maxQueueDepth sets the maximum number of unacknowledged mesages
+//for a client. Listeners is a slice of ListenerConfigs
+type ConfigObject struct {
+	maxQueueDepth int               `json:"maxQueueDepth"`
+	Listeners     []*ListenerConfig `json:"listeners"`
+}
+
 func ParseConfig(confFile string, confVar *ConfigObject) error {
 	file, err := os.Open(confFile)
 	if err != nil {

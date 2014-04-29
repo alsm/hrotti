@@ -22,7 +22,7 @@ type Client struct {
 	topicSpace       string
 	outboundMessages chan *publishPacket
 	outboundPriority chan ControlPacket
-	stop             chan bool
+	stop             chan struct{}
 	stopOnce         *sync.Once
 	resetTimer       chan bool
 	cleanSession     bool
@@ -34,10 +34,10 @@ func NewClient(conn net.Conn, bufferedConn *bufio.ReadWriter, clientId string) *
 	c.conn = conn
 	c.bufferedConn = bufferedConn
 	c.clientId = clientId
-	c.stop = make(chan bool)
+	c.stop = make(chan struct{})
 	c.resetTimer = make(chan bool, 1)
-	c.outboundMessages = make(chan *publishPacket, config.maxQueueDepth)
-	c.outboundPriority = make(chan ControlPacket, config.maxQueueDepth)
+	c.outboundMessages = make(chan *publishPacket, config.MaxQueueDepth)
+	c.outboundPriority = make(chan ControlPacket, config.MaxQueueDepth)
 	c.rootNode = rootNode
 	c.stopOnce = new(sync.Once)
 	c.idChan = make(chan msgId, 10)
@@ -104,8 +104,8 @@ func InitClient(conn net.Conn) {
 			//if the clientid known but not connected, ie cleansession false
 			INFO.Println("Durable client reconnecting", c.clientId)
 			//disconnected client will no longer have the channels for messages
-			c.outboundMessages = make(chan *publishPacket, config.maxQueueDepth)
-			c.outboundPriority = make(chan ControlPacket, config.maxQueueDepth)
+			c.outboundMessages = make(chan *publishPacket, config.MaxQueueDepth)
+			c.outboundPriority = make(chan ControlPacket, config.MaxQueueDepth)
 		}
 		//this function stays running until the client disconnects as the function called by an http
 		//Handler has to remain running until its work is complete. So add one to the client waitgroup.
@@ -114,7 +114,7 @@ func InitClient(conn net.Conn) {
 		c.stopOnce = new(sync.Once)
 		c.conn = conn
 		c.bufferedConn = bufferedConn
-		c.stop = make(chan bool)
+		c.stop = make(chan struct{})
 		//start the client.
 		go c.Start(cp)
 	} else {

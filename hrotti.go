@@ -3,9 +3,7 @@ package main
 import (
 	"code.google.com/p/go.net/websocket"
 	"flag"
-	"io"
-	"io/ioutil"
-	"log"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -15,14 +13,10 @@ import (
 	"syscall"
 )
 
-//loggers and the global inbound/outbound persistence. Persistence is an interface
 var (
-	INFO            *log.Logger
-	PROTOCOL        *log.Logger
-	ERROR           *log.Logger
-	DEBUG           *log.Logger
 	inboundPersist  Persistence
 	outboundPersist Persistence
+	config          ConfigObject
 )
 
 //global struct with a map of clientid to Client pointer and a RW Mutex to protect access.
@@ -31,38 +25,16 @@ var clients struct {
 	list map[string]*Client
 }
 
-var config ConfigObject
-
-//set up the endpoints for the various loggers, needs to be made configurable.
-func configureLogger(infoHandle io.Writer, protocolHandle io.Writer, errorHandle io.Writer, debugHandle io.Writer) {
-	INFO = log.New(infoHandle,
-		"INFO: ",
-		log.Ldate|log.Ltime)
-
-	PROTOCOL = log.New(protocolHandle,
-		"PROTOCOL: ",
-		log.Ldate|log.Ltime)
-
-	ERROR = log.New(errorHandle,
-		"ERROR: ",
-		log.Ldate|log.Ltime|log.Lshortfile)
-
-	DEBUG = log.New(debugHandle,
-		"DEBUG: ",
-		log.Ldate|log.Ltime|log.Lshortfile)
-}
-
 //init functions run before everything else
 func init() {
-	configureLogger(os.Stdout, os.Stdout, os.Stderr, ioutil.Discard)
-	clients.list = make(map[string]*Client)
-
-	var configFile string
-	flag.StringVar(&configFile, "conf", "", "A configuration file")
-	flag.IntVar(&config.maxQueueDepth, "maxqd", 200, "Maximum unacknowledged message queue depth")
+	var (
+		configFile = flag.String("conf", "", "A configuration file")
+	)
 	flag.Parse()
 
-	if configFile == "" {
+	clients.list = make(map[string]*Client)
+
+	if *configFile == "" {
 		host := os.Getenv("HROTTI_HOST")
 		port := os.Getenv("HROTTI_PORT")
 		ws, _ := strconv.ParseBool(os.Getenv("HROTTI_USE_WEBSOCKETS"))
@@ -71,11 +43,15 @@ func init() {
 		}
 		config.Listeners = append(config.Listeners, &ListenerConfig{host, port, ws})
 	} else {
-		err := ParseConfig(configFile, &config)
+		err := ParseConfig(*configFile, &config)
 		if err != nil {
-			ERROR.Println(err.Error())
+			os.Stderr.WriteString(fmt.Sprintf("%s\n", err.Error()))
 		}
 	}
+	configureLogger(config.GetLogTarget("info"),
+		config.GetLogTarget("protocol"),
+		config.GetLogTarget("error"),
+		config.GetLogTarget("debug"))
 
 	//currently the only persistence mechanism provided is the MemoryPersistence.
 	inboundPersist = NewMemoryPersistence()

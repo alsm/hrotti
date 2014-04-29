@@ -9,7 +9,7 @@ type RedirectPlugin struct {
 	sync.RWMutex
 	Redirects  map[string]string
 	fauxClient *Client
-	stop       chan bool
+	stop       chan struct{}
 }
 
 func init() {

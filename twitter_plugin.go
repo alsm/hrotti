@@ -19,7 +19,7 @@ type TwitterPlugin struct {
 	conn       *twitterstream.Connection
 	config     *Secrets
 	Subscribed map[*Client]byte
-	stop       chan bool
+	stop       chan struct{}
 	filter     string
 }
 
@@ -58,7 +58,7 @@ func (tp *TwitterPlugin) AddSub(client *Client, subscription []string, qos byte,
 			close(tp.stop)
 			tp.conn.Close()
 		}
-		tp.stop = make(chan bool)
+		tp.stop = make(chan struct{})
 		tp.conn, err = tp.client.Track(subscription[1])
 		if err != nil {
 			ERROR.Println(err.Error())

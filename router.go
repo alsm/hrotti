@@ -185,6 +185,30 @@ func (n *Node) DeleteSubAll(client *Client) {
 	}
 }
 
+func (n *Node) SetRetained(topic []string, message *publishPacket) {
+	n.Lock()
+	defer n.Unlock()
+	switch x := len(topic); {
+	//Setting a retained message, we may have to create the Nodes for the topic as there is
+	//no guarantee that there are already any subscribers to it.
+	case x > 0:
+		subTopic := topic[0]
+		if _, ok := n.Nodes[subTopic]; !ok {
+			n.Nodes[subTopic] = NewNode(subTopic)
+		}
+		go n.Nodes[subTopic].SetRetained(topic[1:], message)
+	//once the topic slice is empty check the value of the payload of the retained message
+	//a nil value payload has a special meaning that says if there is currently a retained
+	//message set for this Node it should be removed.
+	case x == 0:
+		if len(message.payload) == 0 {
+			n.Retained = nil
+		} else {
+			n.Retained = message
+		}
+	}
+}
+
 func (n *Node) FindRecipients(topic []string, recipients chan *Entry, wg *sync.WaitGroup) {
 	n.RLock()
 	defer n.RUnlock()
@@ -221,89 +245,92 @@ func (n *Node) FindRecipients(topic []string, recipients chan *Entry, wg *sync.W
 	}
 }
 
-func (n *Node) SetRetained(topic []string, message *publishPacket) {
-	n.Lock()
-	defer n.Unlock()
-	switch x := len(topic); {
-	//Setting a retained message, we may have to create the Nodes for the topic as there is
-	//no guarantee that there are already any subscribers to it.
-	case x > 0:
-		subTopic := topic[0]
-		if _, ok := n.Nodes[subTopic]; !ok {
-			n.Nodes[subTopic] = NewNode(subTopic)
-		}
-		go n.Nodes[subTopic].SetRetained(topic[1:], message)
-	//once the topic slice is empty check the value of the payload of the retained message
-	//a nil value payload has a special meaning that says if there is currently a retained
-	//message set for this Node it should be removed.
-	case x == 0:
-		if len(message.payload) == 0 {
-			n.Retained = nil
-		} else {
-			n.Retained = message
-		}
-	}
-}
-
 func (n *Node) DeliverMessage(topic []string, message *publishPacket) {
+	//to workout who we have to deliver a message to we need to trawl the topic space finding
+	//all matching subscribers on the way, due to wild card this wont necessarily be a single
+	//path from the root node to the end of the topic, and as each Node is looked at by an
+	//independent goroutine we need a way to know when all the goroutines have finished their
+	//work and we have all the recipients. That is what the treeWorkers waitgroup is for.
 	var treeWorkers sync.WaitGroup
-	finished := make(chan bool)
-	recipients := make(chan *Entry, 10)
+	recipients := make(chan *Entry)
 	deliverList := make(map[*Client]byte)
-	persistList := make(map[*Client]*publishPacket)
+	//persistList := make(map[*Client]*publishPacket)
 
+	//start the process to go and find all the appropriate recipients for this message
 	treeWorkers.Add(1)
+	go n.FindRecipients(topic, recipients, &treeWorkers)
+	//start a small goroutine that waits for all the treeWorkers to finish (call Done())
+	//then close the recipients channel to let the next bit of code know that we have
+	//identified all the clients to send the message to
 	go func() {
 		treeWorkers.Wait()
-		close(finished)
+		close(recipients)
 	}()
-	go n.FindRecipients(topic, recipients, &treeWorkers)
 
-FindRecipientsLoop:
+	//loop and receive the entries (struct of Client pointer and QoS) from the recipients channel
+	//using the two value form of reading from a channel so we know when the little goroutine
+	//previously has closed the channel and we have all the recipients
 	for {
-		select {
-		case entry := <-recipients:
+		entry, ok := <-recipients
+		if ok {
+			//it's possible that a client has overlapping matching subscriptions (ie when using a
+			//wildcard sub and a specific one), in that case we need to determine the maximum Qos
+			//of the current entry in the delivery list and the Qos from this new entry, then we need
+			//the minimum Qos value of this calculation and the Qos the message was originally sent
+			//with. If this is the first time we've seen this client we just calculate the minimum
+			//of the subscription Qos and the message Qos
 			if currQos, ok := deliverList[entry.Client]; ok {
 				deliverList[entry.Client] = calcMinQos(calcMaxQos(currQos, entry.Qos), message.Qos)
 			} else {
 				deliverList[entry.Client] = calcMinQos(entry.Qos, message.Qos)
 			}
-		case <-finished:
-			break FindRecipientsLoop
+		} else {
+			break
 		}
 	}
 
+	//being as QoS 0 messages have no message id we can just create a single copy of the message for
+	//QoS 0 subscribers and sent a pointer to this single message to all delivery routines for those
+	//clients, here we create that one QoS0 message
 	zeroCopy := message.Copy()
 	zeroCopy.Qos = 0
+	//now we range through the delivery list with the client pointer and the QoS to send the message
+	//to them at.
 	for client, subQos := range deliverList {
-		//ensure that even if the client is offline we queue the message for delivery later
+		//If the QoS is > 0 create a copy of the message as it will need a unique message id assigning
+		//before it is sent to the client, and set the appropriate QoS value on this copy.
+		//If the client is connected then we should get a messageid from client.idChan, assign
+		//message id and persist the message, attempt to send to the outbound message channel for the
+		//client. We actually account with both selects here for the case where the client has gone
+		//offline after calling Connected().
+		//If we know the client is offline then assign an internal message id which will be replaced
+		//when the client comes back online and the message is delivered.
 		if subQos > 0 {
-			deliveryMessage := message.Copy()
-			deliveryMessage.Qos = subQos
-			select {
-			case deliveryMessage.messageId = <-client.idChan:
-			default:
-				deliveryMessage.messageId = <-internalMsgIds.idChan
-			}
-			persistList[client] = deliveryMessage
-		}
-		if client.Connected() {
-			switch subQos {
-			case 0:
-				select {
-				case client.outboundMessages <- zeroCopy:
-				default:
+			go func(client *Client, subQos byte) {
+				deliveryMessage := message.Copy()
+				deliveryMessage.Qos = subQos
+				if client.Connected() {
+					select {
+					case deliveryMessage.messageId = <-client.idChan:
+					case deliveryMessage.messageId = <-internalMsgIds.idChan:
+					}
+					outboundPersist.Add(client, deliveryMessage)
+					select {
+					case client.outboundMessages <- deliveryMessage:
+					default:
+					}
+				} else {
+					deliveryMessage.messageId = <-internalMsgIds.idChan
+					outboundPersist.Add(client, deliveryMessage)
 				}
-			}
-		}
-	}
-
-	outboundPersist.AddBatch(persistList)
-
-	for client, deliveryMessage := range persistList {
-		if client.Connected() {
+			}(client, subQos)
+		} else if client.Connected() {
+			//if the Qos we're sending at is 0 however we don't store the message for offline delivery
+			//as the spec does not require it, we just try and add the message to the outbound channel
+			//for the client, if the channel is full we just drop the message for that client, spec
+			//allows this, QoS0 has no guarantees.
 			select {
-			case client.outboundMessages <- deliveryMessage:
+			case client.outboundMessages <- zeroCopy:
 			default:
 			}
 		}

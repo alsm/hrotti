@@ -1,4 +1,4 @@
-package main
+package hrotti
 
 type PersistenceBatchEntry struct {
 	id      msgId

@@ -1,4 +1,4 @@
-package main
+package hrotti
 
 import (
 	"encoding/json"
@@ -86,7 +86,7 @@ func ParseConfig(confFile string, confVar *ConfigObject) error {
 }
 
 //set up the endpoints for the various loggers, needs to be made configurable.
-func configureLogger(infoHandle io.Writer, protocolHandle io.Writer, errorHandle io.Writer, debugHandle io.Writer) {
+func ConfigureLogger(infoHandle io.Writer, protocolHandle io.Writer, errorHandle io.Writer, debugHandle io.Writer) {
 	INFO = log.New(infoHandle,
 		"INFO: ",
 		log.Ldate|log.Ltime)

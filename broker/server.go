@@ -1,72 +1,41 @@
-package main
+package hrotti
 
 import (
-	"code.google.com/p/go.net/websocket"
-	"flag"
-	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
-	"sync"
 	"syscall"
+
+	"code.google.com/p/go.net/websocket"
 )
 
-var (
+type Hrotti struct {
 	inboundPersist  Persistence
 	outboundPersist Persistence
 	config          ConfigObject
-)
-
-//global struct with a map of clientid to Client pointer and a RW Mutex to protect access.
-var clients struct {
-	sync.RWMutex
-	list map[string]*Client
+	clients         Clients
 }
 
-//init functions run before everything else
-func init() {
-	var (
-		configFile = flag.String("conf", "", "A configuration file")
-	)
-	flag.Parse()
-
-	clients.list = make(map[string]*Client)
-
-	if *configFile == "" {
-		host := os.Getenv("HROTTI_HOST")
-		port := os.Getenv("HROTTI_PORT")
-		ws, _ := strconv.ParseBool(os.Getenv("HROTTI_USE_WEBSOCKETS"))
-		if port == "" {
-			port = "1883"
-		}
-		config.Listeners = append(config.Listeners, &ListenerConfig{host, port, ws})
-	} else {
-		err := ParseConfig(*configFile, &config)
-		if err != nil {
-			os.Stderr.WriteString(fmt.Sprintf("%s\n", err.Error()))
-		}
+func NewHrotti(config ConfigObject) *Hrotti {
+	h := &Hrotti{
+		NewMemoryPersistence(),
+		NewMemoryPersistence(),
+		config,
+		NewClients(),
 	}
-	configureLogger(config.GetLogTarget("info"),
-		config.GetLogTarget("protocol"),
-		config.GetLogTarget("error"),
-		config.GetLogTarget("debug"))
+	return h
+}
 
-	//currently the only persistence mechanism provided is the MemoryPersistence.
-	inboundPersist = NewMemoryPersistence()
-	outboundPersist = NewMemoryPersistence()
-
+func (h *Hrotti) Run() {
 	//start the goroutine that generates internal message ids for when clients receive messages
 	//but are not connected.
 	genInternalIds()
-}
 
-func main() {
 	StartPlugins()
 	//for each configured listener start a go routine that is listening on the port set for
 	//that listener
-	for _, listener := range config.Listeners {
+	for _, listener := range h.config.Listeners {
 		go func(l *ListenerConfig) {
 			serverAddress := l.Host + ":" + l.Port
 			//if this is a WebSocket listener
@@ -81,7 +50,7 @@ func main() {
 				server.Handler = func(ws *websocket.Conn) {
 					ws.PayloadType = websocket.BinaryFrame
 					INFO.Println("New incoming websocket connection", ws.RemoteAddr())
-					InitClient(ws)
+					InitClient(ws, h)
 				}
 				//set the path that the http server will recognise as related to this websocket
 				//server, needs to be configurable really.
@@ -110,7 +79,7 @@ func main() {
 						ERROR.Println(err.Error())
 						continue
 					}
-					go InitClient(conn)
+					go InitClient(conn, h)
 				}
 			}
 		}(listener)

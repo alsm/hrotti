@@ -1,9 +1,10 @@
-package main
+package plugins
 
 import (
 	"errors"
-	"github.com/darkhelmet/twitterstream"
 	"sync"
+
+	"github.com/darkhelmet/twitterstream"
 )
 
 type Secrets struct {

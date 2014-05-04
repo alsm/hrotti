@@ -1,4 +1,4 @@
-package main
+package hrotti
 
 import (
 	"fmt"
@@ -245,7 +245,7 @@ func (n *Node) FindRecipients(topic []string, recipients chan *Entry, wg *sync.W
 	}
 }
 
-func (n *Node) DeliverMessage(topic []string, message *publishPacket) {
+func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hrotti) {
 	//to workout who we have to deliver a message to we need to trawl the topic space finding
 	//all matching subscribers on the way, due to wild card this wont necessarily be a single
 	//path from the root node to the end of the topic, and as each Node is looked at by an
@@ -314,14 +314,14 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket) {
 					case deliveryMessage.messageId = <-client.idChan:
 					case deliveryMessage.messageId = <-internalMsgIds.idChan:
 					}
-					outboundPersist.Add(client, deliveryMessage)
+					hrotti.outboundPersist.Add(client, deliveryMessage)
 					select {
 					case client.outboundMessages <- deliveryMessage:
 					default:
 					}
 				} else {
 					deliveryMessage.messageId = <-internalMsgIds.idChan
-					outboundPersist.Add(client, deliveryMessage)
+					hrotti.outboundPersist.Add(client, deliveryMessage)
 				}
 			}(client, subQos)
 		} else if client.Connected() {

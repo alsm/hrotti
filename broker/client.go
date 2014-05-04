@@ -207,7 +207,6 @@ func (c *Client) Stop(sendWill bool, hrotti *Hrotti) {
 			delete(hrotti.clients.list, c.clientId)
 			hrotti.clients.Unlock()
 			c.rootNode.DeleteSubAll(c)
-			DeleteSubAllPlugins(c)
 			hrotti.inboundPersist.Close(c)
 			hrotti.outboundPersist.Close(c)
 		}
@@ -500,7 +499,7 @@ func (c *Client) Send(hrotti *Hrotti) {
 					msg.SetMsgId(<-c.idChan)
 					hrotti.outboundPersist.Add(c, msg)
 					hrotti.outboundPersist.Delete(c, internalId)
-					freeInternalId(internalId)
+					hrotti.internalMsgIds.freeId(internalId)
 				}
 				_, err := c.conn.Write(msg.Pack())
 				if err != nil {
@@ -517,7 +516,7 @@ func (c *Client) Send(hrotti *Hrotti) {
 					msg.SetMsgId(<-c.idChan)
 					hrotti.outboundPersist.Add(c, msg)
 					hrotti.outboundPersist.Delete(c, internalId)
-					freeInternalId(internalId)
+					hrotti.internalMsgIds.freeId(internalId)
 				}
 				_, err := c.conn.Write(msg.Pack())
 				if err != nil {

@@ -33,15 +33,8 @@ func (c *Client) AddSubscription(topics []string, qoss []byte) []byte {
 			defer close(complete)
 			//the subscription routines expect the topic as a slice of strings.
 			topicArr := strings.Split(topic, "/")
-			//If the first element of the topic is a registered plugin topic then pass this
-			//subscription request to the plugin's AddSub function...
-			if plugin, ok := pluginNodes[topicArr[0]]; ok {
-				go plugin.AddSub(c, topicArr, qos, complete)
-			} else {
-				//...otherwise subscribe starting at the rootNode of the topic tree for this
-				//client
-				c.rootNode.AddSub(c, topicArr, qos, complete)
-			}
+			//subscribe starting at the rootNode of the topic tree for this client
+			c.rootNode.AddSub(c, topicArr, qos, complete)
 			//put the returned QoS value into the appropriate element in the rQoS slice.
 			*entry = <-complete
 			//If the topic contained any +'s in it then run the function that looks for any
@@ -64,11 +57,7 @@ func (c *Client) RemoveSubscription(topic string) bool {
 	complete := make(chan bool)
 	defer close(complete)
 	topicArr := strings.Split(topic, "/")
-	if plugin, ok := pluginNodes[topicArr[0]]; ok {
-		go plugin.DeleteSub(c, topicArr, complete)
-	} else {
-		c.rootNode.DeleteSub(c, topicArr, complete)
-	}
+	c.rootNode.DeleteSub(c, topicArr, complete)
 	<-complete
 	return true
 }

@@ -15,6 +15,7 @@ type Hrotti struct {
 	outboundPersist Persistence
 	config          ConfigObject
 	clients         Clients
+	internalMsgIds  *internalIds
 }
 
 func NewHrotti(config ConfigObject) *Hrotti {
@@ -23,6 +24,7 @@ func NewHrotti(config ConfigObject) *Hrotti {
 		NewMemoryPersistence(),
 		config,
 		NewClients(),
+		&internalIds{},
 	}
 	return h
 }
@@ -30,9 +32,8 @@ func NewHrotti(config ConfigObject) *Hrotti {
 func (h *Hrotti) Run() {
 	//start the goroutine that generates internal message ids for when clients receive messages
 	//but are not connected.
-	genInternalIds()
+	h.internalMsgIds.generateIds()
 
-	StartPlugins()
 	//for each configured listener start a go routine that is listening on the port set for
 	//that listener
 	for _, listener := range h.config.Listeners {

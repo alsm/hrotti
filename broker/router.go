@@ -312,7 +312,7 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hr
 				if client.Connected() {
 					select {
 					case deliveryMessage.messageId = <-client.idChan:
-					case deliveryMessage.messageId = <-internalMsgIds.idChan:
+					case deliveryMessage.messageId = <-hrotti.internalMsgIds.idChan:
 					}
 					hrotti.outboundPersist.Add(client, deliveryMessage)
 					select {
@@ -320,7 +320,7 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hr
 					default:
 					}
 				} else {
-					deliveryMessage.messageId = <-internalMsgIds.idChan
+					deliveryMessage.messageId = <-hrotti.internalMsgIds.idChan
 					hrotti.outboundPersist.Add(client, deliveryMessage)
 				}
 			}(client, subQos)

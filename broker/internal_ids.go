@@ -10,28 +10,25 @@ type internalIds struct {
 	index  map[msgId]bool
 }
 
-var internalMsgIds internalIds
-
 //internal message ids are between 65535 and 2147483648
 const (
 	internalIdMin msgId = 65536
 	internalIdMax msgId = 2147483648
 )
 
-func genInternalIds() {
+func (i *internalIds) generateIds() {
 	//setup the channel and the map, set m as a pointer to internalIds, if you don't use
 	//& you get a copy of internalIds, and no one wants that.
-	internalMsgIds.idChan = make(chan msgId, 10)
-	internalMsgIds.index = make(map[msgId]bool)
-	m := &internalMsgIds
+	i.idChan = make(chan msgId, 10)
+	i.index = make(map[msgId]bool)
 	go func() {
 		for {
-			m.Lock()
-			for i := internalIdMin; i < internalIdMax; i++ {
-				if !m.index[i] {
-					m.index[i] = true
-					m.Unlock()
-					m.idChan <- i
+			i.Lock()
+			for j := internalIdMin; j < internalIdMax; j++ {
+				if !i.index[j] {
+					i.index[j] = true
+					i.Unlock()
+					i.idChan <- j
 					break
 				}
 			}
@@ -39,16 +36,14 @@ func genInternalIds() {
 	}()
 }
 
-func internalIdInUse(id msgId) bool {
-	m := &internalMsgIds
-	m.RLock()
-	defer m.RUnlock()
-	return m.index[id]
+func (i *internalIds) idInUse(id msgId) bool {
+	i.RLock()
+	defer i.RUnlock()
+	return i.index[id]
 }
 
-func freeInternalId(id msgId) {
-	m := &internalMsgIds
-	defer m.Unlock()
-	m.Lock()
-	m.index[id] = false
+func (i *internalIds) freeId(id msgId) {
+	defer i.Unlock()
+	i.Lock()
+	i.index[id] = false
 }

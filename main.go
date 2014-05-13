@@ -4,7 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 
 	. "github.com/alsm/hrotti/broker"
 )
@@ -42,5 +44,9 @@ func main() {
 
 	h := NewHrotti(config)
 
-	h.Run()
+	go h.Run()
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	<-c
+	h.Stop()
 }

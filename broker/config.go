@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-//loggers and the global inbound/outbound persistence. Persistence is an interface
+//loggers
 var (
 	INFO     *log.Logger
 	PROTOCOL *log.Logger

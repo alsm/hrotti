@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,17 +16,14 @@ func createConfig() BrokerConfig {
 	flag.Parse()
 
 	var config BrokerConfig
-	config.Listeners = make(map[string]ListenerConfig)
+	config.Listeners = make(map[string]*ListenerConfig)
 
 	if *configFile == "" {
-		server, err := url.Parse(os.Getenv("HROTTI_URL"))
-		if err != nil {
-			panic(err.Error())
+		listener := NewListenerConfig(os.Getenv("HROTTI_URL"))
+		if listener.URL.Host == "" {
+			listener = NewListenerConfig("tcp://0.0.0.0:1883")
 		}
-		if server.Host == "" {
-			server, _ = url.Parse("tcp://0.0.0.0:1883")
-		}
-		config.Listeners["envconfig"] = *(&ListenerConfig{URL: server})
+		config.Listeners["envconfig"] = listener
 	} else {
 		err := ParseConfig(*configFile, &config)
 		if err != nil {
@@ -44,7 +40,7 @@ func main() {
 	h := NewHrotti(config.MaxQueueDepth)
 
 	for name, listener := range config.Listeners {
-		h.AddListener(name, &listener)
+		h.AddListener(name, listener)
 	}
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)

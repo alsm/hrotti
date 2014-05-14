@@ -25,3 +25,12 @@ type ListenerConfig struct {
 	URL  *url.URL `json:"url"`
 	stop chan struct{}
 }
+
+func NewListenerConfig(rawURL string) *ListenerConfig {
+	listenerURL, err := url.Parse(rawURL)
+	if err != nil {
+		return nil
+	}
+	l := &ListenerConfig{URL: listenerURL}
+	return l
+}

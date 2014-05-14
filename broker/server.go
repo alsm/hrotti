@@ -2,10 +2,10 @@ package hrotti
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"sync"
 
 	"code.google.com/p/go.net/websocket"
@@ -14,86 +14,90 @@ import (
 type Hrotti struct {
 	inboundPersist  Persistence
 	outboundPersist Persistence
-	config          ConfigObject
+	listeners       map[string]ListenerConfig
+	maxQueueDepth   int
 	clients         Clients
 	internalMsgIds  *internalIds
-	stop            chan struct{}
 }
 
-func NewHrotti(config ConfigObject) *Hrotti {
-	return &Hrotti{
+func NewHrotti(maxQueueDepth int) *Hrotti {
+	h := &Hrotti{
 		inboundPersist:  NewMemoryPersistence(),
 		outboundPersist: NewMemoryPersistence(),
-		config:          config,
+		listeners:       make(map[string]ListenerConfig),
+		maxQueueDepth:   maxQueueDepth,
 		clients:         NewClients(),
 		internalMsgIds:  &internalIds{},
-		stop:            make(chan struct{}),
 	}
-}
-
-func (h *Hrotti) Run() {
 	//start the goroutine that generates internal message ids for when clients receive messages
 	//but are not connected.
 	h.internalMsgIds.generateIds()
+	return h
+}
 
-	//for each configured listener start a go routine that is listening on the port set for
-	//that listener
-	for _, listener := range h.config.Listeners {
-		go func(l *ListenerConfig) {
-			serverAddress := l.Host + ":" + l.Port
-			//if this is a WebSocket listener
-			if l.WS {
-				var server websocket.Server
-				//override the Websocket handshake to accept any protocol name
-				server.Handshake = func(c *websocket.Config, req *http.Request) (err error) {
-					INFO.Println(c.Protocol)
-					return err
-				}
-				//set up the ws connection handler, ie what we do when we get a new websocket connection
-				server.Handler = func(ws *websocket.Conn) {
-					ws.PayloadType = websocket.BinaryFrame
-					INFO.Println("New incoming websocket connection", ws.RemoteAddr())
-					h.InitClient(ws)
-				}
-				//set the path that the http server will recognise as related to this websocket
-				//server, needs to be configurable really.
-				http.Handle("/mqtt", server.Handler)
-				INFO.Println("Starting MQTT WebSocket listener on", serverAddress)
-				//ListenAndServe loops forever receiving connections and initiating the handler
-				//for each one.
-				err := http.ListenAndServe(serverAddress, nil)
-				if err != nil {
-					ERROR.Println(err.Error())
-					os.Exit(1)
-				}
-			} else {
-				//this is a tcp listener, so listen on the server address given (combo of host and port)
-				ln, err := net.Listen("tcp", serverAddress)
-				if err != nil {
-					ERROR.Println(err.Error())
-					os.Exit(1)
-				}
-				INFO.Println("Starting MQTT TCP listener on", serverAddress)
-				//loop forever accepting connections and launch InitClient as a goroutine with the connection
-				for {
-					conn, err := ln.Accept()
-					INFO.Println("New incoming connection", conn.RemoteAddr())
-					if err != nil {
-						ERROR.Println(err.Error())
-						continue
-					}
-					go h.InitClient(conn)
-				}
-			}
-		}(listener)
+func (h *Hrotti) AddListener(name string, config *ListenerConfig) error {
+	listener := *config
+	listener.stop = make(chan struct{})
+
+	h.listeners[name] = listener
+
+	ln, err := net.Listen("tcp", listener.URL.Host)
+	if err != nil {
+		ERROR.Println(err.Error())
+		return err
 	}
-	//listen for ctrl+c and use that a signal to exit the program
-	<-h.stop
+
+	if listener.URL.Scheme == "ws" && listener.URL.Path == "" {
+		return errors.New("WebSocket listeners must have a path")
+	}
+
+	INFO.Println("Starting MQTT listener on", listener.URL.String())
+
+	//if this is a WebSocket listener
+	if listener.URL.Scheme == "ws" {
+		var server websocket.Server
+		//override the Websocket handshake to accept any protocol name
+		server.Handshake = func(c *websocket.Config, req *http.Request) (err error) {
+			INFO.Println(c.Protocol)
+			return err
+		}
+		//set up the ws connection handler, ie what we do when we get a new websocket connection
+		server.Handler = func(ws *websocket.Conn) {
+			ws.PayloadType = websocket.BinaryFrame
+			INFO.Println("New incoming websocket connection", ws.RemoteAddr())
+			h.InitClient(ws)
+		}
+		//set the path that the http server will recognise as related to this websocket
+		//server, needs to be configurable really.
+		http.Handle(listener.URL.Path, server.Handler)
+		//ListenAndServe loops forever receiving connections and initiating the handler
+		//for each one.
+		go func(ln net.Listener) {
+			err := http.Serve(ln, nil)
+			if err != nil {
+				ERROR.Println(err.Error())
+				return
+			}
+		}(ln)
+	} else {
+		//loop forever accepting connections and launch InitClient as a goroutine with the connection
+		go func(l *ListenerConfig) {
+			for {
+				conn, err := ln.Accept()
+				INFO.Println("New incoming connection", conn.RemoteAddr())
+				if err != nil {
+					ERROR.Println(err.Error())
+					continue
+				}
+				go h.InitClient(conn)
+			}
+		}(&listener)
+	}
+	return nil
 }
 
 func (h *Hrotti) Stop() {
 	INFO.Println("Exiting...")
-	close(h.stop)
 }
 
 func (h *Hrotti) InitClient(conn net.Conn) {
@@ -154,8 +158,8 @@ func (h *Hrotti) InitClient(conn net.Conn) {
 			//if the clientid known but not connected, ie cleansession false
 			INFO.Println("Durable client reconnecting", c.clientId)
 			//disconnected client will no longer have the channels for messages
-			c.outboundMessages = make(chan *publishPacket, h.config.MaxQueueDepth)
-			c.outboundPriority = make(chan ControlPacket, h.config.MaxQueueDepth)
+			c.outboundMessages = make(chan *publishPacket, h.maxQueueDepth)
+			c.outboundPriority = make(chan ControlPacket, h.maxQueueDepth)
 		}
 		//this function stays running until the client disconnects as the function called by an http
 		//Handler has to remain running until its work is complete. So add one to the client waitgroup.
@@ -169,7 +173,7 @@ func (h *Hrotti) InitClient(conn net.Conn) {
 		go c.Start(cp, h)
 	} else {
 		//This is a brand new client so create a NewClient and add to the clients map
-		c = NewClient(conn, bufferedConn, cp.clientIdentifier, h.config.MaxQueueDepth)
+		c = NewClient(conn, bufferedConn, cp.clientIdentifier, h.maxQueueDepth)
 		h.clients.list[cp.clientIdentifier] = c
 		//As before this function has to remain running but to avoid races we want to make sure its finished
 		//before doing anything else so add it to the waitgroup so we can wait on it later

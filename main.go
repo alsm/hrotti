@@ -3,48 +3,49 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 
 	. "github.com/alsm/hrotti/broker"
 )
 
-func createConfig() ConfigObject {
+func createConfig() BrokerConfig {
 	configFile := flag.String("conf", "", "A configuration file")
 
 	flag.Parse()
 
-	var config ConfigObject
+	var config BrokerConfig
+	config.Listeners = make(map[string]ListenerConfig)
 
 	if *configFile == "" {
-		host := os.Getenv("HROTTI_HOST")
-		port := os.Getenv("HROTTI_PORT")
-		ws, _ := strconv.ParseBool(os.Getenv("HROTTI_USE_WEBSOCKETS"))
-		if port == "" {
-			port = "1883"
+		server, err := url.Parse(os.Getenv("HROTTI_URL"))
+		if err != nil {
+			panic(err.Error())
 		}
-		config.Listeners = append(config.Listeners, &ListenerConfig{host, port, ws})
+		if server.Host == "" {
+			server, _ = url.Parse("tcp://0.0.0.0:1883")
+		}
+		config.Listeners["envconfig"] = *(&ListenerConfig{URL: server})
 	} else {
 		err := ParseConfig(*configFile, &config)
 		if err != nil {
 			os.Stderr.WriteString(fmt.Sprintf("%s\n", err.Error()))
 		}
 	}
-	ConfigureLogger(config.GetLogTarget("info"),
-		config.GetLogTarget("protocol"),
-		config.GetLogTarget("error"),
-		config.GetLogTarget("debug"))
+	config.SetLogTargets()
 	return config
 }
 
 func main() {
 	config := createConfig()
 
-	h := NewHrotti(config)
+	h := NewHrotti(config.MaxQueueDepth)
 
-	go h.Run()
+	for name, listener := range config.Listeners {
+		h.AddListener(name, &listener)
+	}
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c

@@ -32,6 +32,7 @@ type Client struct {
 	resetTimer       chan bool
 	cleanSession     bool
 	willMessage      *publishPacket
+	takeOver         bool
 }
 
 func NewClient(conn net.Conn, bufferedConn *bufio.ReadWriter, clientId string, maxQDepth int) *Client {
@@ -83,46 +84,50 @@ func (c *Client) KeepAliveTimer(hrotti *Hrotti) {
 func (c *Client) StopForTakeover() {
 	//close the stop channel, close the network connection, wait for all the goroutines in the waitgroup to
 	//finish, set the conn and bufferedconn to nil
+	c.takeOver = true
 	close(c.stop)
 	c.conn.Close()
 	c.Wait()
 	c.conn = nil
 	c.bufferedConn = nil
+	c.takeOver = false
 }
 
 func (c *Client) Stop(sendWill bool, hrotti *Hrotti) {
 	//Its possible that error conditions with the network connection might cause both Send and Receive to
 	//try and call Stop(), but we only want it to be called once, so using the sync.Once in the client we
 	//run the embedded function, later calls with the same sync.Once will simply return.
-	c.stopOnce.Do(func() {
-		//close the stop channel, close the network connection, wait for all the goroutines in the waitgroup
-		//set the state as disconnected, close the message channels.
-		close(c.stop)
-		c.conn.Close()
-		c.Wait()
-		c.state.SetValue(DISCONNECTED)
-		close(c.outboundMessages)
-		close(c.outboundPriority)
-		//If we've stopped in a situation where the will message should be sent, and there is a will
-		//message, then send it.
-		if sendWill && c.willMessage != nil {
-			INFO.Println("Sending will message for", c.clientId)
-			go c.rootNode.DeliverMessage(strings.Split(c.willMessage.topicName, "/"), c.willMessage, hrotti)
-		}
-		//if this client connected with cleansession true it means it does not need its state (such as
-		//subscriptions, unreceived messages etc) kept around
-		if c.cleanSession {
-			//so we lock the clients map, delete the clientid and *Client from the map, remove all subscriptions
-			//associated with this client, from the normal tree and any plugins. Then close the persistence
-			//store that it was using.
-			hrotti.clients.Lock()
-			delete(hrotti.clients.list, c.clientId)
-			hrotti.clients.Unlock()
-			c.rootNode.DeleteSubAll(c)
-			hrotti.inboundPersist.Close(c)
-			hrotti.outboundPersist.Close(c)
-		}
-	})
+	if !c.takeOver {
+		c.stopOnce.Do(func() {
+			//close the stop channel, close the network connection, wait for all the goroutines in the waitgroup
+			//set the state as disconnected, close the message channels.
+			close(c.stop)
+			c.conn.Close()
+			c.Wait()
+			c.state.SetValue(DISCONNECTED)
+			close(c.outboundMessages)
+			close(c.outboundPriority)
+			//If we've stopped in a situation where the will message should be sent, and there is a will
+			//message, then send it.
+			if sendWill && c.willMessage != nil {
+				INFO.Println("Sending will message for", c.clientId)
+				go c.rootNode.DeliverMessage(strings.Split(c.willMessage.topicName, "/"), c.willMessage, hrotti)
+			}
+			//if this client connected with cleansession true it means it does not need its state (such as
+			//subscriptions, unreceived messages etc) kept around
+			if c.cleanSession {
+				//so we lock the clients map, delete the clientid and *Client from the map, remove all subscriptions
+				//associated with this client, from the normal tree and any plugins. Then close the persistence
+				//store that it was using.
+				hrotti.clients.Lock()
+				delete(hrotti.clients.list, c.clientId)
+				hrotti.clients.Unlock()
+				c.rootNode.DeleteSubAll(c)
+				hrotti.inboundPersist.Close(c)
+				hrotti.outboundPersist.Close(c)
+			}
+		})
+	}
 }
 
 func (c *Client) Start(cp *connectPacket, hrotti *Hrotti) {

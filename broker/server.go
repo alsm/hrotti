@@ -72,9 +72,9 @@ func (h *Hrotti) AddListener(name string, config *ListenerConfig) error {
 	if listener.url.Scheme == "ws" {
 		var server websocket.Server
 		//override the Websocket handshake to accept any protocol name
-		server.Handshake = func(c *websocket.Config, req *http.Request) (err error) {
-			INFO.Println(c.Protocol)
-			return err
+		server.Handshake = func(c *websocket.Config, req *http.Request) error {
+			c.Origin, _ = url.Parse(req.RemoteAddr)
+			return nil
 		}
 		//set up the ws connection handler, ie what we do when we get a new websocket connection
 		server.Handler = func(ws *websocket.Conn) {
@@ -85,7 +85,7 @@ func (h *Hrotti) AddListener(name string, config *ListenerConfig) error {
 		}
 		//set the path that the http server will recognise as related to this websocket
 		//server, needs to be configurable really.
-		http.Handle(listener.url.Path, server.Handler)
+		http.Handle(listener.url.Path, server)
 		//ListenAndServe loops forever receiving connections and initiating the handler
 		//for each one.
 		go func(ln net.Listener) {
@@ -183,7 +183,7 @@ func (h *Hrotti) InitClient(conn net.Conn) {
 	//Lock the clients hashmap while we check if we already know this clientid.
 	h.clients.Lock()
 	c, ok := h.clients.list[cp.clientIdentifier]
-	if ok {
+	if ok && cp.cleanSession == 0 {
 		//and if we do, if the clientid is currently connected...
 		if c.Connected() {
 			INFO.Println("Clientid", c.clientId, "already connected, stopping first client")

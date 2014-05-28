@@ -6,25 +6,34 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 
 	"code.google.com/p/go.net/websocket"
 )
 
 type Hrotti struct {
-	inboundPersist  Persistence
-	outboundPersist Persistence
-	listeners       map[string]ListenerConfig
-	maxQueueDepth   int
-	clients         Clients
-	internalMsgIds  *internalIds
+	inboundPersist     Persistence
+	outboundPersist    Persistence
+	listeners          map[string]*internalListener
+	listenersWaitGroup sync.WaitGroup
+	maxQueueDepth      int
+	clients            Clients
+	internalMsgIds     *internalIds
+}
+
+type internalListener struct {
+	name        string
+	url         url.URL
+	connections []net.Conn
+	stop        chan struct{}
 }
 
 func NewHrotti(maxQueueDepth int) *Hrotti {
 	h := &Hrotti{
 		inboundPersist:  NewMemoryPersistence(),
 		outboundPersist: NewMemoryPersistence(),
-		listeners:       make(map[string]ListenerConfig),
+		listeners:       make(map[string]*internalListener),
 		maxQueueDepth:   maxQueueDepth,
 		clients:         NewClients(),
 		internalMsgIds:  &internalIds{},
@@ -36,25 +45,31 @@ func NewHrotti(maxQueueDepth int) *Hrotti {
 }
 
 func (h *Hrotti) AddListener(name string, config *ListenerConfig) error {
-	listener := *config
+	listener := &internalListener{name: name, url: *config.URL}
 	listener.stop = make(chan struct{})
 
 	h.listeners[name] = listener
 
-	ln, err := net.Listen("tcp", listener.URL.Host)
+	ln, err := net.Listen("tcp", listener.url.Host)
 	if err != nil {
 		ERROR.Println(err.Error())
 		return err
 	}
 
-	if listener.URL.Scheme == "ws" && listener.URL.Path == "" {
-		return errors.New("WebSocket listeners must have a path")
+	if listener.url.Scheme == "ws" && len(listener.url.Path) == 0 {
+		listener.url.Path = "/"
 	}
 
-	INFO.Println("Starting MQTT listener on", listener.URL.String())
+	h.listenersWaitGroup.Add(1)
+	INFO.Println("Starting MQTT listener on", listener.url.String())
 
+	go func() {
+		<-listener.stop
+		INFO.Println("Listener", name, "is stopping...")
+		ln.Close()
+	}()
 	//if this is a WebSocket listener
-	if listener.URL.Scheme == "ws" {
+	if listener.url.Scheme == "ws" {
 		var server websocket.Server
 		//override the Websocket handshake to accept any protocol name
 		server.Handshake = func(c *websocket.Config, req *http.Request) (err error) {
@@ -65,14 +80,16 @@ func (h *Hrotti) AddListener(name string, config *ListenerConfig) error {
 		server.Handler = func(ws *websocket.Conn) {
 			ws.PayloadType = websocket.BinaryFrame
 			INFO.Println("New incoming websocket connection", ws.RemoteAddr())
+			listener.connections = append(listener.connections, ws)
 			h.InitClient(ws)
 		}
 		//set the path that the http server will recognise as related to this websocket
 		//server, needs to be configurable really.
-		http.Handle(listener.URL.Path, server.Handler)
+		http.Handle(listener.url.Path, server.Handler)
 		//ListenAndServe loops forever receiving connections and initiating the handler
 		//for each one.
 		go func(ln net.Listener) {
+			defer h.listenersWaitGroup.Done()
 			err := http.Serve(ln, nil)
 			if err != nil {
 				ERROR.Println(err.Error())
@@ -81,23 +98,41 @@ func (h *Hrotti) AddListener(name string, config *ListenerConfig) error {
 		}(ln)
 	} else {
 		//loop forever accepting connections and launch InitClient as a goroutine with the connection
-		go func(l *ListenerConfig) {
+		go func() {
+			defer h.listenersWaitGroup.Done()
 			for {
 				conn, err := ln.Accept()
-				INFO.Println("New incoming connection", conn.RemoteAddr())
 				if err != nil {
 					ERROR.Println(err.Error())
-					continue
+					return
 				}
+				INFO.Println("New incoming connection", conn.RemoteAddr())
+				listener.connections = append(listener.connections, conn)
 				go h.InitClient(conn)
 			}
-		}(&listener)
+		}()
 	}
 	return nil
 }
 
+func (h *Hrotti) StopListener(name string) error {
+	if listener, ok := h.listeners[name]; ok {
+		close(listener.stop)
+		for _, conn := range listener.connections {
+			conn.Close()
+		}
+		delete(h.listeners, name)
+		return nil
+	}
+	return errors.New("Listener not found")
+}
+
 func (h *Hrotti) Stop() {
 	INFO.Println("Exiting...")
+	for _, listener := range h.listeners {
+		close(listener.stop)
+	}
+	h.listenersWaitGroup.Wait()
 }
 
 func (h *Hrotti) InitClient(conn net.Conn) {

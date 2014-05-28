@@ -14,6 +14,7 @@ var (
 	DEBUG    *log.Logger
 )
 
+//The default output for all the loggers is set to ioutil.Discard
 func init() {
 	INFO = log.New(ioutil.Discard, "", 0)
 	PROTOCOL = log.New(ioutil.Discard, "", 0)
@@ -21,11 +22,13 @@ func init() {
 	DEBUG = log.New(ioutil.Discard, "", 0)
 }
 
+//ListenerConfig is a struct containing a URL
 type ListenerConfig struct {
-	URL  *url.URL `json:"url"`
-	stop chan struct{}
+	URL *url.URL
 }
 
+//NewListenerConfig returns a pointer to a ListenerConfig prepared to listen
+//on the URL specified as rawURL
 func NewListenerConfig(rawURL string) *ListenerConfig {
 	listenerURL, err := url.Parse(rawURL)
 	if err != nil {

@@ -16,6 +16,7 @@ func createConfig() BrokerConfig {
 	flag.Parse()
 
 	var config BrokerConfig
+	config.ListenerEntries = make(map[string]*ListenerEntry)
 	config.Listeners = make(map[string]*ListenerConfig)
 
 	if *configFile == "" {
@@ -25,6 +26,7 @@ func createConfig() BrokerConfig {
 		}
 		config.Listeners["envconfig"] = listener
 	} else {
+		fmt.Println("Reading config file", *configFile)
 		err := ParseConfig(*configFile, &config)
 		if err != nil {
 			os.Stderr.WriteString(fmt.Sprintf("%s\n", err.Error()))

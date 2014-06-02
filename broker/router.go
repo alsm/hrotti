@@ -50,10 +50,10 @@ func (n *Node) Print(prefix string) string {
 		fmt.Printf("%s ", v.Print(prefix+"--"))
 		if len(v.HashSub) > 0 || len(v.Sub) > 0 {
 			for c, _ := range v.Sub {
-				fmt.Printf("%s ", c.clientId)
+				fmt.Printf("%s ", c.clientID)
 			}
 			for c, _ := range v.HashSub {
-				fmt.Printf("%s ", c.clientId)
+				fmt.Printf("%s ", c.clientID)
 			}
 		}
 		fmt.Printf("\n")
@@ -311,8 +311,8 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hr
 				deliveryMessage.Qos = subQos
 				if client.Connected() {
 					select {
-					case deliveryMessage.messageId = <-client.idChan:
-					case deliveryMessage.messageId = <-hrotti.internalMsgIds.idChan:
+					case deliveryMessage.messageID = <-client.idChan:
+					case deliveryMessage.messageID = <-hrotti.internalMsgIDs.idChan:
 					}
 					hrotti.outboundPersist.Add(client, deliveryMessage)
 					select {
@@ -320,7 +320,7 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hr
 					default:
 					}
 				} else {
-					deliveryMessage.messageId = <-hrotti.internalMsgIds.idChan
+					deliveryMessage.messageID = <-hrotti.internalMsgIDs.idChan
 					hrotti.outboundPersist.Add(client, deliveryMessage)
 				}
 			}(client, subQos)

@@ -110,7 +110,7 @@ func (tp *TwitterPlugin) Run() {
 			message.Qos = 0
 			message.topicName = "$twitter/" + tweet.User.ScreenName
 			message.payload = []byte(tweet.Text)
-			for client, _ := range tp.Subscribed {
+			for client := range tp.Subscribed {
 				select {
 				case client.outboundMessages <- message:
 				default:

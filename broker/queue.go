@@ -46,7 +46,7 @@ func (q *msgQueue) Push(msg ControlPacket) {
 		q.tail.next = qn
 		q.tail = qn
 	}
-	q.size += 1
+	q.size++
 	q.ready <- true
 }
 
@@ -63,7 +63,7 @@ func (q *msgQueue) PushHead(msg ControlPacket) {
 		qn.next = q.head
 		q.head = qn
 	}
-	q.size += 1
+	q.size++
 	q.ready <- true
 }
 
@@ -78,7 +78,7 @@ func (q *msgQueue) Pop() ControlPacket {
 	} else {
 		q.head = qn.next
 	}
-	q.size -= 1
+	q.size--
 
 	return qn.msg
 }

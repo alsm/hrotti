@@ -42,7 +42,7 @@ func (c *Client) AddSubscription(topics []string, qoss []byte) []byte {
 			if strings.ContainsAny(topic, "+") {
 				c.rootNode.FindRetainedForPlus(c, topicArr)
 			}
-			INFO.Println("Subscription made for", c.clientId, topic)
+			INFO.Println("Subscription made for", c.clientID, topic)
 		}(topic, qoss[i], &rQos[i], &subWorkers)
 	}
 	//wait for all (even if only 1) of the workers in the waitgroup to finish.

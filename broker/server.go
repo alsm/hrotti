@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"sync"
 
+	"code.google.com/p/go-uuid/uuid"
 	"code.google.com/p/go.net/websocket"
 )
 
@@ -19,7 +20,7 @@ type Hrotti struct {
 	listenersWaitGroup sync.WaitGroup
 	maxQueueDepth      int
 	clients            Clients
-	internalMsgIds     *internalIds
+	internalMsgIDs     *internalIDs
 }
 
 type internalListener struct {
@@ -36,11 +37,11 @@ func NewHrotti(maxQueueDepth int) *Hrotti {
 		listeners:       make(map[string]*internalListener),
 		maxQueueDepth:   maxQueueDepth,
 		clients:         NewClients(),
-		internalMsgIds:  &internalIds{},
+		internalMsgIDs:  &internalIDs{},
 	}
 	//start the goroutine that generates internal message ids for when clients receive messages
 	//but are not connected.
-	h.internalMsgIds.generateIds()
+	h.internalMsgIDs.generateIDs()
 	return h
 }
 
@@ -137,6 +138,7 @@ func (h *Hrotti) Stop() {
 
 func (h *Hrotti) InitClient(conn net.Conn) {
 	var cph FixedHeader
+	var sendSessionID bool
 
 	//create a bufio conn from the network connection
 	bufferedConn := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
@@ -161,6 +163,7 @@ func (h *Hrotti) InitClient(conn net.Conn) {
 	cp := New(CONNECT).(*connectPacket)
 	cp.FixedHeader = cph
 	cp.Unpack(body)
+
 	//Validate the CONNECT, check fields, values etc.
 	rc := cp.Validate()
 	//If it didn't validate...
@@ -180,18 +183,25 @@ func (h *Hrotti) InitClient(conn net.Conn) {
 		//Put up an INFO message with the client id and the address they're connecting from.
 		INFO.Println(connackReturnCodes[rc], cp.clientIdentifier, conn.RemoteAddr())
 	}
+
+	//check for a zero length client id and if it exists create one from the UUID library and return
+	//it on $SYS/session_identifier
+	if len(cp.clientIdentifier) == 0 {
+		cp.clientIdentifier = uuid.New()
+		sendSessionID = true
+	}
 	//Lock the clients hashmap while we check if we already know this clientid.
 	h.clients.Lock()
 	c, ok := h.clients.list[cp.clientIdentifier]
 	if ok && cp.cleanSession == 0 {
 		//and if we do, if the clientid is currently connected...
 		if c.Connected() {
-			INFO.Println("Clientid", c.clientId, "already connected, stopping first client")
+			INFO.Println("Clientid", c.clientID, "already connected, stopping first client")
 			//stop the parts of it that need to stop before we can change the network connection it's using.
 			c.StopForTakeover()
 		} else {
 			//if the clientid known but not connected, ie cleansession false
-			INFO.Println("Durable client reconnecting", c.clientId)
+			INFO.Println("Durable client reconnecting", c.clientID)
 			//disconnected client will no longer have the channels for messages
 			c.outboundMessages = make(chan *publishPacket, h.maxQueueDepth)
 			c.outboundPriority = make(chan ControlPacket, h.maxQueueDepth)
@@ -210,6 +220,15 @@ func (h *Hrotti) InitClient(conn net.Conn) {
 		//This is a brand new client so create a NewClient and add to the clients map
 		c = NewClient(conn, bufferedConn, cp.clientIdentifier, h.maxQueueDepth)
 		h.clients.list[cp.clientIdentifier] = c
+		if sendSessionID {
+			go func() {
+				sessionIDPacket := New(PUBLISH).(*publishPacket)
+				sessionIDPacket.topicName = "$SYS/session_identifier"
+				sessionIDPacket.payload = []byte(cp.clientIdentifier)
+				sessionIDPacket.Qos = 1
+				c.outboundMessages <- sessionIDPacket
+			}()
+		}
 		//As before this function has to remain running but to avoid races we want to make sure its finished
 		//before doing anything else so add it to the waitgroup so we can wait on it later
 		c.Add(1)

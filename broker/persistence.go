@@ -1,7 +1,7 @@
 package hrotti
 
 type PersistenceBatchEntry struct {
-	id      msgId
+	id      msgID
 	message publishPacket
 }
 
@@ -11,7 +11,7 @@ type Persistence interface {
 	Add(*Client, ControlPacket) bool
 	Replace(*Client, ControlPacket) bool
 	AddBatch(map[*Client]*publishPacket)
-	Delete(*Client, msgId) bool
+	Delete(*Client, msgID) bool
 	GetAll(*Client) []ControlPacket
 	Exists(*Client) bool
 }

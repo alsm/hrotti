@@ -4,25 +4,25 @@ import (
 	"sync"
 )
 
-type msgId uint32
+type msgID uint32
 
-type MessageIds struct {
+type MessageIDs struct {
 	sync.RWMutex
-	idChan chan msgId
-	index  map[msgId]bool
+	idChan chan msgID
+	index  map[msgID]bool
 }
 
 const (
-	msgIdMax msgId = 65535
-	msgIdMin msgId = 1
+	msgIDMax msgID = 65535
+	msgIDMin msgID = 1
 )
 
-func (c *Client) genMsgIds() {
+func (c *Client) genMsgIDs() {
 	defer c.Done()
-	m := &c.MessageIds
+	m := &c.MessageIDs
 	for {
 		m.Lock()
-		for i := msgIdMin; i < msgIdMax; i++ {
+		for i := msgIDMin; i < msgIDMax; i++ {
 			if !m.index[i] {
 				m.index[i] = true
 				m.Unlock()
@@ -37,13 +37,13 @@ func (c *Client) genMsgIds() {
 	}
 }
 
-func (m *MessageIds) inUse(id msgId) bool {
+func (m *MessageIDs) inUse(id msgID) bool {
 	m.RLock()
 	defer m.RUnlock()
 	return m.index[id]
 }
 
-func (m *MessageIds) freeId(id msgId) {
+func (m *MessageIDs) freeID(id msgID) {
 	defer m.Unlock()
 	m.Lock()
 	m.index[id] = false

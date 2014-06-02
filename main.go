@@ -25,6 +25,7 @@ func createConfig() BrokerConfig {
 			listener = NewListenerConfig("tcp://0.0.0.0:1883")
 		}
 		config.Listeners["envconfig"] = listener
+		config.MaxQueueDepth = 100
 	} else {
 		fmt.Println("Reading config file", *configFile)
 		err := ParseConfig(*configFile, &config)

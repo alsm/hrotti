@@ -11,8 +11,8 @@ type ControlPacket interface {
 	Pack() []byte
 	Unpack([]byte)
 	Type() uint8
-	SetMsgId(msgId)
-	MsgId() msgId
+	SetMsgID(msgID)
+	MsgID() msgID
 	String() string
 	QoS() byte
 	//Validate() bool
@@ -72,14 +72,14 @@ var connackReturnCodes = map[uint8]string{
 	255: "Connection Refused: Protocol Violation",
 }
 
-func msgIdToBytes(messageId msgId) []byte {
-	msgIdBytes := make([]byte, 2)
-	binary.BigEndian.PutUint16(msgIdBytes, uint16(messageId))
-	return msgIdBytes
+func msgIDToBytes(messageID msgID) []byte {
+	msgIDBytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(msgIDBytes, uint16(messageID))
+	return msgIDBytes
 }
 
-func bytesToMsgId(bytes []byte) msgId {
-	return msgId(binary.BigEndian.Uint16(bytes))
+func bytesToMsgID(bytes []byte) msgID {
+	return msgID(binary.BigEndian.Uint16(bytes))
 }
 
 func getType(typeByte []byte) byte {
@@ -307,11 +307,11 @@ func (c *connectPacket) Validate() byte {
 	return CONN_ACCEPTED
 }
 
-func (c *connectPacket) MsgId() msgId {
+func (c *connectPacket) MsgID() msgID {
 	return 0
 }
 
-func (c *connectPacket) SetMsgId(id msgId) {
+func (c *connectPacket) SetMsgID(id msgID) {
 }
 
 func (c *connectPacket) QoS() byte {
@@ -349,11 +349,11 @@ func (ca *connackPacket) Unpack(packet []byte) {
 	ca.returnCode = packet[1]
 }
 
-func (ca *connackPacket) MsgId() msgId {
+func (ca *connackPacket) MsgID() msgID {
 	return 0
 }
 
-func (c *connackPacket) SetMsgId(id msgId) {
+func (ca *connackPacket) SetMsgID(id msgID) {
 }
 
 func (ca *connackPacket) QoS() byte {
@@ -382,11 +382,11 @@ func (d *disconnectPacket) Pack() []byte {
 func (d *disconnectPacket) Unpack(packet []byte) {
 }
 
-func (d *disconnectPacket) MsgId() msgId {
+func (d *disconnectPacket) MsgID() msgID {
 	return 0
 }
 
-func (d *disconnectPacket) SetMsgId(id msgId) {
+func (d *disconnectPacket) SetMsgID(id msgID) {
 }
 
 func (d *disconnectPacket) QoS() byte {
@@ -402,13 +402,13 @@ func (d *disconnectPacket) Type() uint8 {
 type publishPacket struct {
 	FixedHeader
 	topicName string
-	messageId msgId
+	messageID msgID
 	payload   []byte
 }
 
 func (p *publishPacket) String() string {
 	str := fmt.Sprintf("%s\n", p.FixedHeader)
-	str += fmt.Sprintf("topicName: %s messageId: %d\n", p.topicName, p.messageId)
+	str += fmt.Sprintf("topicName: %s messageID: %d\n", p.topicName, p.messageID)
 	str += fmt.Sprintf("payload: %s\n", string(p.payload))
 	return str
 }
@@ -417,7 +417,7 @@ func (p *publishPacket) Pack() []byte {
 	var body []byte
 	body = append(body, encodeField(p.topicName)...)
 	if p.Qos > 0 {
-		body = append(body, msgIdToBytes(p.messageId)...)
+		body = append(body, msgIDToBytes(p.messageID)...)
 	}
 	body = append(body, p.payload...)
 	return append(p.FixedHeader.pack(uint32(len(body))), body...)
@@ -426,7 +426,7 @@ func (p *publishPacket) Pack() []byte {
 func (p *publishPacket) Unpack(packet []byte) {
 	packet, p.topicName, _ = decodeField(packet[p.FixedHeader.length:])
 	if p.Qos > 0 {
-		p.messageId = bytesToMsgId(packet[:2])
+		p.messageID = bytesToMsgID(packet[:2])
 		p.payload = packet[2:]
 	} else {
 		p.payload = packet[:]
@@ -441,12 +441,12 @@ func (p *publishPacket) Copy() *publishPacket {
 	return newP
 }
 
-func (p *publishPacket) MsgId() msgId {
-	return p.messageId
+func (p *publishPacket) MsgID() msgID {
+	return p.messageID
 }
 
-func (p *publishPacket) SetMsgId(id msgId) {
-	p.messageId = id
+func (p *publishPacket) SetMsgID(id msgID) {
+	p.messageID = id
 }
 
 func (p *publishPacket) QoS() byte {
@@ -461,36 +461,36 @@ func (p *publishPacket) Type() uint8 {
 
 type pubackPacket struct {
 	FixedHeader
-	messageId msgId
+	messageID msgID
 }
 
 func (pa *pubackPacket) String() string {
 	str := fmt.Sprintf("%s\n", pa.FixedHeader)
-	str += fmt.Sprintf("messageId: %d", pa.messageId)
+	str += fmt.Sprintf("messageID: %d", pa.messageID)
 	return str
 }
 
 func (pa *pubackPacket) Pack() []byte {
-	return append(pa.FixedHeader.pack(uint32(2)), msgIdToBytes(pa.messageId)...)
+	return append(pa.FixedHeader.pack(uint32(2)), msgIDToBytes(pa.messageID)...)
 }
 
 func (pa *pubackPacket) Unpack(packet []byte) {
-	pa.messageId = bytesToMsgId(packet[:2])
+	pa.messageID = bytesToMsgID(packet[:2])
 }
 
-func (pa *pubackPacket) MsgId() msgId {
-	return pa.messageId
+func (pa *pubackPacket) MsgID() msgID {
+	return pa.messageID
 }
 
-func (pa *pubackPacket) SetMsgId(id msgId) {
-	pa.messageId = id
+func (pa *pubackPacket) SetMsgID(id msgID) {
+	pa.messageID = id
 }
 
 func (pa *pubackPacket) QoS() byte {
 	return pa.Qos
 }
 
-func (p *pubackPacket) Type() uint8 {
+func (pa *pubackPacket) Type() uint8 {
 	return PUBACK
 }
 
@@ -498,29 +498,29 @@ func (p *pubackPacket) Type() uint8 {
 
 type pubrecPacket struct {
 	FixedHeader
-	messageId msgId
+	messageID msgID
 }
 
 func (pr *pubrecPacket) String() string {
 	str := fmt.Sprintf("%s\n", pr.FixedHeader)
-	str += fmt.Sprintf("messageId: %d", pr.messageId)
+	str += fmt.Sprintf("messageID: %d", pr.messageID)
 	return str
 }
 
 func (pr *pubrecPacket) Pack() []byte {
-	return append(pr.FixedHeader.pack(uint32(2)), msgIdToBytes(pr.messageId)...)
+	return append(pr.FixedHeader.pack(uint32(2)), msgIDToBytes(pr.messageID)...)
 }
 
 func (pr *pubrecPacket) Unpack(packet []byte) {
-	pr.messageId = bytesToMsgId(packet[:2])
+	pr.messageID = bytesToMsgID(packet[:2])
 }
 
-func (pr *pubrecPacket) MsgId() msgId {
-	return pr.messageId
+func (pr *pubrecPacket) MsgID() msgID {
+	return pr.messageID
 }
 
-func (pr *pubrecPacket) SetMsgId(id msgId) {
-	pr.messageId = id
+func (pr *pubrecPacket) SetMsgID(id msgID) {
+	pr.messageID = id
 }
 
 func (pr *pubrecPacket) QoS() byte {
@@ -535,29 +535,29 @@ func (pr *pubrecPacket) Type() uint8 {
 
 type pubrelPacket struct {
 	FixedHeader
-	messageId msgId
+	messageID msgID
 }
 
 func (pr *pubrelPacket) String() string {
 	str := fmt.Sprintf("%s\n", pr.FixedHeader)
-	str += fmt.Sprintf("messageId: %d", pr.messageId)
+	str += fmt.Sprintf("messageID: %d", pr.messageID)
 	return str
 }
 
 func (pr *pubrelPacket) Pack() []byte {
-	return append(pr.FixedHeader.pack(uint32(2)), msgIdToBytes(pr.messageId)...)
+	return append(pr.FixedHeader.pack(uint32(2)), msgIDToBytes(pr.messageID)...)
 }
 
 func (pr *pubrelPacket) Unpack(packet []byte) {
-	pr.messageId = bytesToMsgId(packet[:2])
+	pr.messageID = bytesToMsgID(packet[:2])
 }
 
-func (pr *pubrelPacket) MsgId() msgId {
-	return pr.messageId
+func (pr *pubrelPacket) MsgID() msgID {
+	return pr.messageID
 }
 
-func (pr *pubrelPacket) SetMsgId(id msgId) {
-	pr.messageId = id
+func (pr *pubrelPacket) SetMsgID(id msgID) {
+	pr.messageID = id
 }
 
 func (pr *pubrelPacket) QoS() byte {
@@ -572,29 +572,29 @@ func (pr *pubrelPacket) Type() uint8 {
 
 type pubcompPacket struct {
 	FixedHeader
-	messageId msgId
+	messageID msgID
 }
 
 func (pc *pubcompPacket) String() string {
 	str := fmt.Sprintf("%s\n", pc.FixedHeader)
-	str += fmt.Sprintf("messageId: %d", pc.messageId)
+	str += fmt.Sprintf("messageID: %d", pc.messageID)
 	return str
 }
 
 func (pc *pubcompPacket) Pack() []byte {
-	return append(pc.FixedHeader.pack(uint32(2)), msgIdToBytes(pc.messageId)...)
+	return append(pc.FixedHeader.pack(uint32(2)), msgIDToBytes(pc.messageID)...)
 }
 
 func (pc *pubcompPacket) Unpack(packet []byte) {
-	pc.messageId = bytesToMsgId(packet[:2])
+	pc.messageID = bytesToMsgID(packet[:2])
 }
 
-func (pc *pubcompPacket) MsgId() msgId {
-	return pc.messageId
+func (pc *pubcompPacket) MsgID() msgID {
+	return pc.messageID
 }
 
-func (pc *pubcompPacket) SetMsgId(id msgId) {
-	pc.messageId = id
+func (pc *pubcompPacket) SetMsgID(id msgID) {
+	pc.messageID = id
 }
 
 func (pc *pubcompPacket) QoS() byte {
@@ -609,7 +609,7 @@ func (pc *pubcompPacket) Type() uint8 {
 
 type subscribePacket struct {
 	FixedHeader
-	messageId msgId
+	messageID msgID
 	payload   []byte
 	topics    []string
 	qoss      []byte
@@ -617,20 +617,20 @@ type subscribePacket struct {
 
 func (s *subscribePacket) String() string {
 	str := fmt.Sprintf("%s\n", s.FixedHeader)
-	//str += fmt.Sprintf("messageId: %d topics: %s", s.messageId, string(s.payload[:bytes.Index(s.payload, []byte{0})]))
-	str += fmt.Sprintf("messageId: %d topics: %s", s.messageId, string(s.payload[:bytes.Index(s.payload, []byte{0})]))
+	//str += fmt.Sprintf("messageID: %d topics: %s", s.messageID, string(s.payload[:bytes.Index(s.payload, []byte{0})]))
+	str += fmt.Sprintf("messageID: %d topics: %s", s.messageID, string(s.payload[:bytes.Index(s.payload, []byte{0})]))
 	return str
 }
 
 func (s *subscribePacket) Pack() []byte {
 	var body []byte
-	body = append(body, msgIdToBytes(s.messageId)...)
+	body = append(body, msgIDToBytes(s.messageID)...)
 	body = append(body, s.payload...)
 	return append(s.FixedHeader.pack(uint32(len(body))), body...)
 }
 
 func (s *subscribePacket) Unpack(packet []byte) {
-	s.messageId = bytesToMsgId(packet[0:2])
+	s.messageID = bytesToMsgID(packet[0:2])
 	s.payload = packet[2:]
 	payload := packet[2:]
 	var topic string
@@ -641,12 +641,12 @@ func (s *subscribePacket) Unpack(packet []byte) {
 	}
 }
 
-func (s *subscribePacket) MsgId() msgId {
-	return s.messageId
+func (s *subscribePacket) MsgID() msgID {
+	return s.messageID
 }
 
-func (s *subscribePacket) SetMsgId(id msgId) {
-	s.messageId = id
+func (s *subscribePacket) SetMsgID(id msgID) {
+	s.messageID = id
 }
 
 func (s *subscribePacket) QoS() byte {
@@ -661,33 +661,33 @@ func (s *subscribePacket) Type() uint8 {
 
 type subackPacket struct {
 	FixedHeader
-	messageId   msgId
+	messageID   msgID
 	grantedQoss []byte
 }
 
 func (sa *subackPacket) String() string {
 	str := fmt.Sprintf("%s\n", sa.FixedHeader)
-	str += fmt.Sprintf("messageId: %d", sa.messageId)
+	str += fmt.Sprintf("messageID: %d", sa.messageID)
 	return str
 }
 
 func (sa *subackPacket) Pack() []byte {
 	var body []byte
-	body = append(body, msgIdToBytes(sa.messageId)...)
+	body = append(body, msgIDToBytes(sa.messageID)...)
 	body = append(body, sa.grantedQoss...)
 	return append(sa.FixedHeader.pack(uint32(len(body))), body...)
 }
 
 func (sa *subackPacket) Unpack(packet []byte) {
-	sa.messageId = bytesToMsgId(packet[:2])
+	sa.messageID = bytesToMsgID(packet[:2])
 }
 
-func (sa *subackPacket) MsgId() msgId {
-	return sa.messageId
+func (sa *subackPacket) MsgID() msgID {
+	return sa.messageID
 }
 
-func (sa *subackPacket) SetMsgId(id msgId) {
-	sa.messageId = id
+func (sa *subackPacket) SetMsgID(id msgID) {
+	sa.messageID = id
 }
 
 func (sa *subackPacket) QoS() byte {
@@ -702,26 +702,26 @@ func (sa *subackPacket) Type() uint8 {
 
 type unsubscribePacket struct {
 	FixedHeader
-	messageId msgId
+	messageID msgID
 	payload   []byte
 	topics    []string
 }
 
 func (u *unsubscribePacket) String() string {
 	str := fmt.Sprintf("%s\n", u.FixedHeader)
-	str += fmt.Sprintf("messageId: %d", u.messageId)
+	str += fmt.Sprintf("messageID: %d", u.messageID)
 	return str
 }
 
 func (u *unsubscribePacket) Pack() []byte {
 	var body []byte
-	body = append(body, msgIdToBytes(u.messageId)...)
+	body = append(body, msgIDToBytes(u.messageID)...)
 	body = append(body, u.payload...)
 	return append(u.FixedHeader.pack(uint32(len(body))), body...)
 }
 
 func (u *unsubscribePacket) Unpack(packet []byte) {
-	u.messageId = bytesToMsgId(packet[:2])
+	u.messageID = bytesToMsgID(packet[:2])
 	u.payload = packet[2:]
 	payload := packet[2:]
 	var topic string
@@ -730,12 +730,12 @@ func (u *unsubscribePacket) Unpack(packet []byte) {
 	}
 }
 
-func (u *unsubscribePacket) MsgId() msgId {
-	return u.messageId
+func (u *unsubscribePacket) MsgID() msgID {
+	return u.messageID
 }
 
-func (u *unsubscribePacket) SetMsgId(id msgId) {
-	u.messageId = id
+func (u *unsubscribePacket) SetMsgID(id msgID) {
+	u.messageID = id
 }
 
 func (u *unsubscribePacket) QoS() byte {
@@ -750,29 +750,29 @@ func (u *unsubscribePacket) Type() uint8 {
 
 type unsubackPacket struct {
 	FixedHeader
-	messageId msgId
+	messageID msgID
 }
 
 func (ua *unsubackPacket) String() string {
 	str := fmt.Sprintf("%s\n", ua.FixedHeader)
-	str += fmt.Sprintf("messageId: %d", ua.messageId)
+	str += fmt.Sprintf("messageID: %d", ua.messageID)
 	return str
 }
 
 func (ua *unsubackPacket) Pack() []byte {
-	return append(ua.FixedHeader.pack(uint32(2)), msgIdToBytes(ua.messageId)...)
+	return append(ua.FixedHeader.pack(uint32(2)), msgIDToBytes(ua.messageID)...)
 }
 
 func (ua *unsubackPacket) Unpack(packet []byte) {
-	ua.messageId = bytesToMsgId(packet[:2])
+	ua.messageID = bytesToMsgID(packet[:2])
 }
 
-func (ua *unsubackPacket) MsgId() msgId {
-	return ua.messageId
+func (ua *unsubackPacket) MsgID() msgID {
+	return ua.messageID
 }
 
-func (ua *unsubackPacket) SetMsgId(id msgId) {
-	ua.messageId = id
+func (ua *unsubackPacket) SetMsgID(id msgID) {
+	ua.messageID = id
 }
 
 func (ua *unsubackPacket) QoS() byte {
@@ -801,11 +801,11 @@ func (pr *pingreqPacket) Pack() []byte {
 func (pr *pingreqPacket) Unpack(packet []byte) {
 }
 
-func (pr *pingreqPacket) MsgId() msgId {
+func (pr *pingreqPacket) MsgID() msgID {
 	return 0
 }
 
-func (pr *pingreqPacket) SetMsgId(id msgId) {
+func (pr *pingreqPacket) SetMsgID(id msgID) {
 }
 
 func (pr *pingreqPacket) QoS() byte {
@@ -834,11 +834,11 @@ func (pr *pingrespPacket) Pack() []byte {
 func (pr *pingrespPacket) Unpack(packet []byte) {
 }
 
-func (pr *pingrespPacket) MsgId() msgId {
+func (pr *pingrespPacket) MsgID() msgID {
 	return 0
 }
 
-func (pr *pingrespPacket) SetMsgId(id msgId) {
+func (pr *pingrespPacket) SetMsgID(id msgID) {
 }
 
 func (pr *pingrespPacket) QoS() byte {

@@ -11,10 +11,10 @@ type Persistence interface {
 	Init() Persistence
 	Open(*Client)
 	Close(*Client)
-	Add(*Client, dirFlag, ControlPacket) bool
-	Replace(*Client, dirFlag, ControlPacket) bool
+	Add(*Client, dirFlag, controlPacket) bool
+	Replace(*Client, dirFlag, controlPacket) bool
 	AddBatch(map[*Client]*publishPacket)
 	Delete(*Client, dirFlag, msgID) bool
-	GetAll(*Client) []ControlPacket
+	GetAll(*Client) []controlPacket
 	Exists(*Client) bool
 }

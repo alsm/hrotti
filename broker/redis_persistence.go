@@ -43,20 +43,20 @@ func (r *RedisPersistence) Close(c *Client) {
 	handle.Flush()
 }
 
-func (r *RedisPersistence) Add(c *Client, cp ControlPacket) bool {
+func (r *RedisPersistence) Add(c *Client, cp controlPacket) bool {
 	handle := r.pool.Get()
 	defer handle.Close()
-	_, err := handle.Do("HSET", c.clientID, cp.MsgID(), cp.Pack())
+	_, err := handle.Do("HSET", c.clientID, cp.msgID(), cp.pack())
 	if err != nil {
 		return false
 	}
 	return true
 }
 
-func (r *RedisPersistence) Replace(c *Client, cp ControlPacket) bool {
+func (r *RedisPersistence) Replace(c *Client, cp controlPacket) bool {
 	handle := r.pool.Get()
 	defer handle.Close()
-	_, err := handle.Do("HSET", c.clientID, cp.MsgID(), cp.Pack())
+	_, err := handle.Do("HSET", c.clientID, cp.msgID(), cp.pack())
 	if err != nil {
 		return false
 	}
@@ -68,7 +68,7 @@ func (r *RedisPersistence) AddBatch(messages map[*Client]*publishPacket) {
 	defer handle.Close()
 	handle.Send("MULTI")
 	for c, cp := range messages {
-		handle.Send("HSET", c.clientID, cp.MsgID(), cp.Pack())
+		handle.Send("HSET", c.clientID, cp.msgID(), cp.pack())
 	}
 	_, err := handle.Do("EXEC")
 	if err != nil {
@@ -87,8 +87,8 @@ func (r *RedisPersistence) Delete(c *Client, id msgID) bool {
 	return true
 }
 
-func (r *RedisPersistence) GetAll(c *Client) []ControlPacket {
-	var returnPackets []ControlPacket
+func (r *RedisPersistence) GetAll(c *Client) []controlPacket {
+	var returnPackets []controlPacket
 	handle := r.pool.Get()
 	defer handle.Close()
 	values, err := redis.Values(handle.Do("HGETALL", c.clientID))
@@ -96,8 +96,8 @@ func (r *RedisPersistence) GetAll(c *Client) []ControlPacket {
 		return nil
 	}
 	for _, value := range values {
-		cp := New(value.([]byte)[0])
-		cp.Unpack(value.([]byte))
+		cp := newControlPacket(value.([]byte)[0])
+		cp.unpack(value.([]byte))
 		returnPackets = append(returnPackets, cp)
 	}
 	return returnPackets

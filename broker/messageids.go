@@ -6,7 +6,7 @@ import (
 
 type msgID uint32
 
-type MessageIDs struct {
+type messageIDs struct {
 	sync.RWMutex
 	idChan chan msgID
 	index  map[msgID]bool
@@ -19,7 +19,7 @@ const (
 
 func (c *Client) genMsgIDs() {
 	defer c.Done()
-	m := &c.MessageIDs
+	m := &c.messageIDs
 	for {
 		m.Lock()
 		for i := msgIDMin; i < msgIDMax; i++ {
@@ -37,13 +37,13 @@ func (c *Client) genMsgIDs() {
 	}
 }
 
-func (m *MessageIDs) inUse(id msgID) bool {
+func (m *messageIDs) inUse(id msgID) bool {
 	m.RLock()
 	defer m.RUnlock()
 	return m.index[id]
 }
 
-func (m *MessageIDs) freeID(id msgID) {
+func (m *messageIDs) freeID(id msgID) {
 	defer m.Unlock()
 	m.Lock()
 	m.index[id] = false

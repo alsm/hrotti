@@ -5,14 +5,14 @@ import (
 )
 
 // A map of clientid to Client pointer and a RW Mutex to protect access.
-type Clients struct {
+type clients struct {
 	sync.RWMutex
 	list map[string]*Client
 }
 
 // Return empty Clients (value type)
-func NewClients() Clients {
-	c := Clients{
+func newClients() clients {
+	c := clients{
 		sync.RWMutex{},
 		make(map[string]*Client),
 	}

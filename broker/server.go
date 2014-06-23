@@ -18,7 +18,7 @@ type Hrotti struct {
 	listeners          map[string]*internalListener
 	listenersWaitGroup sync.WaitGroup
 	maxQueueDepth      int
-	clients            Clients
+	clients            clients
 	internalMsgIDs     *internalIDs
 	rootNode           *Node
 }
@@ -35,7 +35,7 @@ func NewHrotti(maxQueueDepth int, persistence Persistence) *Hrotti {
 		PersistStore:   persistence,
 		listeners:      make(map[string]*internalListener),
 		maxQueueDepth:  maxQueueDepth,
-		clients:        NewClients(),
+		clients:        newClients(),
 		internalMsgIDs: &internalIDs{},
 		rootNode:       NewNode(""),
 	}
@@ -138,7 +138,7 @@ func (h *Hrotti) Stop() {
 }
 
 func (h *Hrotti) InitClient(conn net.Conn) {
-	var cph FixedHeader
+	var cph fixedHeader
 	var sendSessionID bool
 
 	//create a bufio conn from the network connection
@@ -148,7 +148,7 @@ func (h *Hrotti) InitClient(conn net.Conn) {
 	//unpack the first byte into the fixed header
 	cph.unpack(typeByte)
 
-	if cph.MessageType != CONNECT {
+	if cph.messageType != CONNECT {
 		//If the first packet isn't a CONNECT, it's not MQTT or not compliant, so kill the connection and we're done.
 		conn.Close()
 		return
@@ -161,9 +161,9 @@ func (h *Hrotti) InitClient(conn net.Conn) {
 	body := make([]byte, cph.remainingLength)
 	io.ReadFull(bufferedConn, body)
 	//create a new empty CONNECT packet to unpack the body of the CONNECT into
-	cp := New(CONNECT).(*connectPacket)
-	cp.FixedHeader = cph
-	cp.Unpack(body)
+	cp := newControlPacket(CONNECT).(*connectPacket)
+	cp.fixedHeader = cph
+	cp.unpack(body)
 
 	//Validate the CONNECT, check fields, values etc.
 	rc := cp.Validate()
@@ -172,9 +172,9 @@ func (h *Hrotti) InitClient(conn net.Conn) {
 		//and it wasn't because of a protocol violation...
 		if rc != CONN_PROTOCOL_VIOLATION {
 			//create and send a CONNACK with the correct rc in it.
-			ca := New(CONNACK).(*connackPacket)
+			ca := newControlPacket(CONNACK).(*connackPacket)
 			ca.returnCode = rc
-			conn.Write(ca.Pack())
+			conn.Write(ca.pack())
 		}
 		//Put up a local message indicating an errored connection attempt and close the connection
 		ERROR.Println(connackReturnCodes[rc], conn.RemoteAddr())
@@ -205,7 +205,7 @@ func (h *Hrotti) InitClient(conn net.Conn) {
 			INFO.Println("Durable client reconnecting", c.clientID)
 			//disconnected client will no longer have the channels for messages
 			c.outboundMessages = make(chan *publishPacket, h.maxQueueDepth)
-			c.outboundPriority = make(chan ControlPacket, h.maxQueueDepth)
+			c.outboundPriority = make(chan controlPacket, h.maxQueueDepth)
 		}
 		//this function stays running until the client disconnects as the function called by an http
 		//Handler has to remain running until its work is complete. So add one to the client waitgroup.
@@ -219,14 +219,14 @@ func (h *Hrotti) InitClient(conn net.Conn) {
 		go c.Start(cp, h)
 	} else {
 		//This is a brand new client so create a NewClient and add to the clients map
-		c = NewClient(conn, bufferedConn, cp.clientIdentifier, h.maxQueueDepth)
+		c = newClient(conn, bufferedConn, cp.clientIdentifier, h.maxQueueDepth)
 		h.clients.list[cp.clientIdentifier] = c
 		if sendSessionID {
 			go func() {
-				sessionIDPacket := New(PUBLISH).(*publishPacket)
+				sessionIDPacket := newControlPacket(PUBLISH).(*publishPacket)
 				sessionIDPacket.topicName = "$SYS/session_identifier"
 				sessionIDPacket.payload = []byte(cp.clientIdentifier)
-				sessionIDPacket.Qos = 1
+				sessionIDPacket.qos = 1
 				c.outboundMessages <- sessionIDPacket
 			}()
 		}

@@ -7,14 +7,13 @@ import (
 	"fmt"
 )
 
-type ControlPacket interface {
-	Pack() []byte
-	Unpack([]byte)
-	Type() uint8
-	SetMsgID(msgID)
-	MsgID() msgID
+type controlPacket interface {
+	pack() []byte
+	unpack([]byte)
+	packetType() uint8
+	setMsgID(msgID)
+	msgID() msgID
 	String() string
-	QoS() byte
 	//Validate() bool
 }
 
@@ -82,71 +81,67 @@ func bytesToMsgID(bytes []byte) msgID {
 	return msgID(binary.BigEndian.Uint16(bytes))
 }
 
-func getType(typeByte []byte) byte {
-	return typeByte[0] >> 4
-}
-
-func New(packetType byte) ControlPacket {
+func newControlPacket(packetType byte) controlPacket {
 	switch packetType {
 	case CONNECT:
-		return &connectPacket{FixedHeader: FixedHeader{MessageType: CONNECT}, protocolName: "MQIsdp", protocolVersion: 3}
+		return &connectPacket{fixedHeader: fixedHeader{messageType: CONNECT}, protocolName: "MQIsdp", protocolVersion: 3}
 	case CONNACK:
-		return &connackPacket{FixedHeader: FixedHeader{MessageType: CONNACK}}
+		return &connackPacket{fixedHeader: fixedHeader{messageType: CONNACK}}
 	case DISCONNECT:
-		return &disconnectPacket{FixedHeader: FixedHeader{MessageType: DISCONNECT}}
+		return &disconnectPacket{fixedHeader: fixedHeader{messageType: DISCONNECT}}
 	case PUBLISH:
-		return &publishPacket{FixedHeader: FixedHeader{MessageType: PUBLISH}}
+		return &publishPacket{fixedHeader: fixedHeader{messageType: PUBLISH}}
 	case PUBACK:
-		return &pubackPacket{FixedHeader: FixedHeader{MessageType: PUBACK}}
+		return &pubackPacket{fixedHeader: fixedHeader{messageType: PUBACK}}
 	case PUBREC:
-		return &pubrecPacket{FixedHeader: FixedHeader{MessageType: PUBREC}}
+		return &pubrecPacket{fixedHeader: fixedHeader{messageType: PUBREC}}
 	case PUBREL:
-		return &pubrelPacket{FixedHeader: FixedHeader{MessageType: PUBREL, Qos: 1}}
+		return &pubrelPacket{fixedHeader: fixedHeader{messageType: PUBREL, qos: 1}}
 	case PUBCOMP:
-		return &pubcompPacket{FixedHeader: FixedHeader{MessageType: PUBCOMP}}
+		return &pubcompPacket{fixedHeader: fixedHeader{messageType: PUBCOMP}}
 	case SUBSCRIBE:
-		return &subscribePacket{FixedHeader: FixedHeader{MessageType: SUBSCRIBE, Qos: 1}}
+		return &subscribePacket{fixedHeader: fixedHeader{messageType: SUBSCRIBE, qos: 1}}
 	case SUBACK:
-		return &subackPacket{FixedHeader: FixedHeader{MessageType: SUBACK}}
+		return &subackPacket{fixedHeader: fixedHeader{messageType: SUBACK}}
 	case UNSUBSCRIBE:
-		return &unsubscribePacket{FixedHeader: FixedHeader{MessageType: UNSUBSCRIBE}}
+		return &unsubscribePacket{fixedHeader: fixedHeader{messageType: UNSUBSCRIBE}}
 	case UNSUBACK:
-		return &unsubackPacket{FixedHeader: FixedHeader{MessageType: UNSUBACK}}
+		return &unsubackPacket{fixedHeader: fixedHeader{messageType: UNSUBACK}}
 	case PINGREQ:
-		return &pingreqPacket{FixedHeader: FixedHeader{MessageType: PINGREQ}}
+		return &pingreqPacket{fixedHeader: fixedHeader{messageType: PINGREQ}}
 	case PINGRESP:
-		return &pingrespPacket{FixedHeader: FixedHeader{MessageType: PINGRESP}}
+		return &pingrespPacket{fixedHeader: fixedHeader{messageType: PINGRESP}}
 	default:
 		break
 	}
 	return nil
 }
 
-type FixedHeader struct {
-	MessageType     byte
-	Dup             byte
-	Qos             byte
-	Retain          byte
+type fixedHeader struct {
+	messageType     byte
+	dup             byte
+	qos             byte
+	retain          byte
 	remainingLength uint32
 	length          int
 }
 
-func (fh FixedHeader) String() string {
-	return fmt.Sprintf("%s: dup: %d qos: %d retain: %d rLength: %d", packetNames[fh.MessageType], fh.Dup, fh.Qos, fh.Retain, fh.remainingLength)
+func (fh fixedHeader) String() string {
+	return fmt.Sprintf("%s: dup: %d qos: %d retain: %d rLength: %d", packetNames[fh.messageType], fh.dup, fh.qos, fh.retain, fh.remainingLength)
 }
 
-func (fh *FixedHeader) pack(size uint32) []byte {
+func (fh *fixedHeader) pack(size uint32) []byte {
 	var header bytes.Buffer
-	header.WriteByte(fh.MessageType<<4 | fh.Dup<<3 | fh.Qos<<1 | fh.Retain)
+	header.WriteByte(fh.messageType<<4 | fh.dup<<3 | fh.qos<<1 | fh.retain)
 	header.Write(encode(size))
 	return header.Bytes()
 }
 
-func (fh *FixedHeader) unpack(header byte) {
-	fh.MessageType = header >> 4
-	fh.Dup = (header >> 3) & 0x01
-	fh.Qos = (header >> 1) & 0x03
-	fh.Retain = header & 0x01
+func (fh *fixedHeader) unpack(header byte) {
+	fh.messageType = header >> 4
+	fh.dup = (header >> 3) & 0x01
+	fh.qos = (header >> 1) & 0x03
+	fh.retain = header & 0x01
 }
 
 func encodeField(field string) []byte {
@@ -211,14 +206,14 @@ func decodeLength(src *bufio.ReadWriter) uint32 {
 	return rLength
 }
 
-func messageType(mType byte) byte {
+func messagepacketType(mType byte) byte {
 	return mType >> 4
 }
 
 //CONNECT packet
 
 type connectPacket struct {
-	FixedHeader
+	fixedHeader
 	protocolName    string
 	protocolVersion byte
 	cleanSession    byte
@@ -238,12 +233,12 @@ type connectPacket struct {
 }
 
 func (c *connectPacket) String() string {
-	str := fmt.Sprintf("%s\n", c.FixedHeader)
-	str += fmt.Sprintf("protocolversion: %d protocolname: %s cleansession: %d willflag: %d willqos: %d willretain: %d usernameflag: %d passwordflag: %d keepalivetimer: %d\nclientId: %s\nwilltopic: %s\nwillmessage: %s\nusername: %s\npassword: %s\n", c.protocolVersion, c.protocolName, c.cleanSession, c.willFlag, c.willQos, c.willRetain, c.usernameFlag, c.passwordFlag, c.keepaliveTimer, c.clientIdentifier, c.willTopic, c.willMessage, c.username, c.password)
+	str := fmt.Sprintf("%s\n", c.fixedHeader)
+	str += fmt.Sprintf("protocolversion: %d protocolname: %s cleansession: %d willflag: %d willQos: %d willRetain: %d usernameflag: %d passwordflag: %d keepalivetimer: %d\nclientId: %s\nwilltopic: %s\nwillmessage: %s\nusername: %s\npassword: %s\n", c.protocolVersion, c.protocolName, c.cleanSession, c.willFlag, c.willQos, c.willRetain, c.usernameFlag, c.passwordFlag, c.keepaliveTimer, c.clientIdentifier, c.willTopic, c.willMessage, c.username, c.password)
 	return str
 }
 
-func (c *connectPacket) Pack() []byte {
+func (c *connectPacket) pack() []byte {
 	var body []byte
 	keepalive := make([]byte, 2)
 	binary.BigEndian.PutUint16(keepalive, c.keepaliveTimer)
@@ -262,11 +257,11 @@ func (c *connectPacket) Pack() []byte {
 	if c.passwordFlag == 1 {
 		body = append(body, encodeByteField(c.password)...)
 	}
-	return append(c.FixedHeader.pack(uint32(len(body))), body...)
+	return append(c.fixedHeader.pack(uint32(len(body))), body...)
 }
 
-func (c *connectPacket) Unpack(packet []byte) {
-	packet, c.protocolName, _ = decodeField(packet[c.FixedHeader.length:])
+func (c *connectPacket) unpack(packet []byte) {
+	packet, c.protocolName, _ = decodeField(packet[c.fixedHeader.length:])
 	c.protocolVersion = packet[0]
 	options := packet[1]
 	c.reservedBit = 1 & options
@@ -307,125 +302,113 @@ func (c *connectPacket) Validate() byte {
 	return CONN_ACCEPTED
 }
 
-func (c *connectPacket) MsgID() msgID {
+func (c *connectPacket) msgID() msgID {
 	return 0
 }
 
-func (c *connectPacket) SetMsgID(id msgID) {
+func (c *connectPacket) setMsgID(id msgID) {
 }
 
-func (c *connectPacket) QoS() byte {
-	return c.Qos
-}
-
-func (c *connectPacket) Type() uint8 {
+func (c *connectPacket) packetType() uint8 {
 	return CONNECT
 }
 
 //CONNACK packet
 
 type connackPacket struct {
-	FixedHeader
+	fixedHeader
 	topicNameCompression byte
 	returnCode           byte
 }
 
 func (ca *connackPacket) String() string {
-	str := fmt.Sprintf("%s\n", ca.FixedHeader)
+	str := fmt.Sprintf("%s\n", ca.fixedHeader)
 	str += fmt.Sprintf("returncode: %d", ca.returnCode)
 	return str
 }
 
-func (ca *connackPacket) Pack() []byte {
+func (ca *connackPacket) pack() []byte {
 	var body []byte
 	body = append(body, ca.topicNameCompression)
 	body = append(body, ca.returnCode)
-	return append(ca.FixedHeader.pack(uint32(2)), body...)
+	return append(ca.fixedHeader.pack(uint32(2)), body...)
 }
 
-func (ca *connackPacket) Unpack(packet []byte) {
-	packet = packet[ca.FixedHeader.length:]
+func (ca *connackPacket) unpack(packet []byte) {
+	packet = packet[ca.fixedHeader.length:]
 	ca.topicNameCompression = packet[0]
 	ca.returnCode = packet[1]
 }
 
-func (ca *connackPacket) MsgID() msgID {
+func (ca *connackPacket) msgID() msgID {
 	return 0
 }
 
-func (ca *connackPacket) SetMsgID(id msgID) {
+func (ca *connackPacket) setMsgID(id msgID) {
 }
 
-func (ca *connackPacket) QoS() byte {
-	return ca.Qos
-}
-
-func (ca *connackPacket) Type() uint8 {
+func (ca *connackPacket) packetType() uint8 {
 	return CONNACK
 }
 
 //DISCONNECT packet
 
 type disconnectPacket struct {
-	FixedHeader
+	fixedHeader
 }
 
 func (d *disconnectPacket) String() string {
-	str := fmt.Sprintf("%s\n", d.FixedHeader)
+	str := fmt.Sprintf("%s\n", d.fixedHeader)
 	return str
 }
 
-func (d *disconnectPacket) Pack() []byte {
-	return d.FixedHeader.pack(uint32(0))
+func (d *disconnectPacket) pack() []byte {
+	return d.fixedHeader.pack(uint32(0))
 }
 
-func (d *disconnectPacket) Unpack(packet []byte) {
+func (d *disconnectPacket) unpack(packet []byte) {
 }
 
-func (d *disconnectPacket) MsgID() msgID {
+func (d *disconnectPacket) msgID() msgID {
 	return 0
 }
 
-func (d *disconnectPacket) SetMsgID(id msgID) {
+func (d *disconnectPacket) setMsgID(id msgID) {
 }
 
-func (d *disconnectPacket) QoS() byte {
-	return d.Qos
-}
-
-func (d *disconnectPacket) Type() uint8 {
+func (d *disconnectPacket) packetType() uint8 {
 	return DISCONNECT
 }
 
 //PUBLISH packet
 
 type publishPacket struct {
-	FixedHeader
+	fixedHeader
 	topicName string
 	messageID msgID
 	payload   []byte
 }
 
 func (p *publishPacket) String() string {
-	str := fmt.Sprintf("%s\n", p.FixedHeader)
+	str := fmt.Sprintf("%s\n", p.fixedHeader)
 	str += fmt.Sprintf("topicName: %s messageID: %d\n", p.topicName, p.messageID)
 	str += fmt.Sprintf("payload: %s\n", string(p.payload))
 	return str
 }
 
-func (p *publishPacket) Pack() []byte {
+func (p *publishPacket) pack() []byte {
 	var body []byte
 	body = append(body, encodeField(p.topicName)...)
-	if p.Qos > 0 {
+	if p.qos > 0 {
 		body = append(body, msgIDToBytes(p.messageID)...)
 	}
 	body = append(body, p.payload...)
-	return append(p.FixedHeader.pack(uint32(len(body))), body...)
+	return append(p.fixedHeader.pack(uint32(len(body))), body...)
 }
 
-func (p *publishPacket) Unpack(packet []byte) {
-	packet, p.topicName, _ = decodeField(packet[p.FixedHeader.length:])
-	if p.Qos > 0 {
+func (p *publishPacket) unpack(packet []byte) {
+	packet, p.topicName, _ = decodeField(packet[p.fixedHeader.length:])
+	if p.qos > 0 {
 		p.messageID = bytesToMsgID(packet[:2])
 		p.payload = packet[2:]
 	} else {
@@ -434,181 +417,161 @@ func (p *publishPacket) Unpack(packet []byte) {
 }
 
 func (p *publishPacket) Copy() *publishPacket {
-	newP := New(PUBLISH).(*publishPacket)
+	newP := newControlPacket(PUBLISH).(*publishPacket)
 	newP.topicName = p.topicName
 	newP.payload = p.payload
 
 	return newP
 }
 
-func (p *publishPacket) MsgID() msgID {
+func (p *publishPacket) msgID() msgID {
 	return p.messageID
 }
 
-func (p *publishPacket) SetMsgID(id msgID) {
+func (p *publishPacket) setMsgID(id msgID) {
 	p.messageID = id
 }
 
-func (p *publishPacket) QoS() byte {
-	return p.Qos
-}
-
-func (p *publishPacket) Type() uint8 {
+func (p *publishPacket) packetType() uint8 {
 	return PUBLISH
 }
 
 //PUBACK packet
 
 type pubackPacket struct {
-	FixedHeader
+	fixedHeader
 	messageID msgID
 }
 
 func (pa *pubackPacket) String() string {
-	str := fmt.Sprintf("%s\n", pa.FixedHeader)
+	str := fmt.Sprintf("%s\n", pa.fixedHeader)
 	str += fmt.Sprintf("messageID: %d", pa.messageID)
 	return str
 }
 
-func (pa *pubackPacket) Pack() []byte {
-	return append(pa.FixedHeader.pack(uint32(2)), msgIDToBytes(pa.messageID)...)
+func (pa *pubackPacket) pack() []byte {
+	return append(pa.fixedHeader.pack(uint32(2)), msgIDToBytes(pa.messageID)...)
 }
 
-func (pa *pubackPacket) Unpack(packet []byte) {
+func (pa *pubackPacket) unpack(packet []byte) {
 	pa.messageID = bytesToMsgID(packet[:2])
 }
 
-func (pa *pubackPacket) MsgID() msgID {
+func (pa *pubackPacket) msgID() msgID {
 	return pa.messageID
 }
 
-func (pa *pubackPacket) SetMsgID(id msgID) {
+func (pa *pubackPacket) setMsgID(id msgID) {
 	pa.messageID = id
 }
 
-func (pa *pubackPacket) QoS() byte {
-	return pa.Qos
-}
-
-func (pa *pubackPacket) Type() uint8 {
+func (pa *pubackPacket) packetType() uint8 {
 	return PUBACK
 }
 
 //PUBREC packet
 
 type pubrecPacket struct {
-	FixedHeader
+	fixedHeader
 	messageID msgID
 }
 
 func (pr *pubrecPacket) String() string {
-	str := fmt.Sprintf("%s\n", pr.FixedHeader)
+	str := fmt.Sprintf("%s\n", pr.fixedHeader)
 	str += fmt.Sprintf("messageID: %d", pr.messageID)
 	return str
 }
 
-func (pr *pubrecPacket) Pack() []byte {
-	return append(pr.FixedHeader.pack(uint32(2)), msgIDToBytes(pr.messageID)...)
+func (pr *pubrecPacket) pack() []byte {
+	return append(pr.fixedHeader.pack(uint32(2)), msgIDToBytes(pr.messageID)...)
 }
 
-func (pr *pubrecPacket) Unpack(packet []byte) {
+func (pr *pubrecPacket) unpack(packet []byte) {
 	pr.messageID = bytesToMsgID(packet[:2])
 }
 
-func (pr *pubrecPacket) MsgID() msgID {
+func (pr *pubrecPacket) msgID() msgID {
 	return pr.messageID
 }
 
-func (pr *pubrecPacket) SetMsgID(id msgID) {
+func (pr *pubrecPacket) setMsgID(id msgID) {
 	pr.messageID = id
 }
 
-func (pr *pubrecPacket) QoS() byte {
-	return pr.Qos
-}
-
-func (pr *pubrecPacket) Type() uint8 {
+func (pr *pubrecPacket) packetType() uint8 {
 	return PUBREC
 }
 
 //PUBREL packet
 
 type pubrelPacket struct {
-	FixedHeader
+	fixedHeader
 	messageID msgID
 }
 
 func (pr *pubrelPacket) String() string {
-	str := fmt.Sprintf("%s\n", pr.FixedHeader)
+	str := fmt.Sprintf("%s\n", pr.fixedHeader)
 	str += fmt.Sprintf("messageID: %d", pr.messageID)
 	return str
 }
 
-func (pr *pubrelPacket) Pack() []byte {
-	return append(pr.FixedHeader.pack(uint32(2)), msgIDToBytes(pr.messageID)...)
+func (pr *pubrelPacket) pack() []byte {
+	return append(pr.fixedHeader.pack(uint32(2)), msgIDToBytes(pr.messageID)...)
 }
 
-func (pr *pubrelPacket) Unpack(packet []byte) {
+func (pr *pubrelPacket) unpack(packet []byte) {
 	pr.messageID = bytesToMsgID(packet[:2])
 }
 
-func (pr *pubrelPacket) MsgID() msgID {
+func (pr *pubrelPacket) msgID() msgID {
 	return pr.messageID
 }
 
-func (pr *pubrelPacket) SetMsgID(id msgID) {
+func (pr *pubrelPacket) setMsgID(id msgID) {
 	pr.messageID = id
 }
 
-func (pr *pubrelPacket) QoS() byte {
-	return pr.Qos
-}
-
-func (pr *pubrelPacket) Type() uint8 {
+func (pr *pubrelPacket) packetType() uint8 {
 	return PUBREL
 }
 
 //PUBCOMP packet
 
 type pubcompPacket struct {
-	FixedHeader
+	fixedHeader
 	messageID msgID
 }
 
 func (pc *pubcompPacket) String() string {
-	str := fmt.Sprintf("%s\n", pc.FixedHeader)
+	str := fmt.Sprintf("%s\n", pc.fixedHeader)
 	str += fmt.Sprintf("messageID: %d", pc.messageID)
 	return str
 }
 
-func (pc *pubcompPacket) Pack() []byte {
-	return append(pc.FixedHeader.pack(uint32(2)), msgIDToBytes(pc.messageID)...)
+func (pc *pubcompPacket) pack() []byte {
+	return append(pc.fixedHeader.pack(uint32(2)), msgIDToBytes(pc.messageID)...)
 }
 
-func (pc *pubcompPacket) Unpack(packet []byte) {
+func (pc *pubcompPacket) unpack(packet []byte) {
 	pc.messageID = bytesToMsgID(packet[:2])
 }
 
-func (pc *pubcompPacket) MsgID() msgID {
+func (pc *pubcompPacket) msgID() msgID {
 	return pc.messageID
 }
 
-func (pc *pubcompPacket) SetMsgID(id msgID) {
+func (pc *pubcompPacket) setMsgID(id msgID) {
 	pc.messageID = id
 }
 
-func (pc *pubcompPacket) QoS() byte {
-	return pc.Qos
-}
-
-func (pc *pubcompPacket) Type() uint8 {
+func (pc *pubcompPacket) packetType() uint8 {
 	return PUBCOMP
 }
 
 //SUBSCRIBE packet
 
 type subscribePacket struct {
-	FixedHeader
+	fixedHeader
 	messageID msgID
 	payload   []byte
 	topics    []string
@@ -616,20 +579,20 @@ type subscribePacket struct {
 }
 
 func (s *subscribePacket) String() string {
-	str := fmt.Sprintf("%s\n", s.FixedHeader)
+	str := fmt.Sprintf("%s\n", s.fixedHeader)
 	//str += fmt.Sprintf("messageID: %d topics: %s", s.messageID, string(s.payload[:bytes.Index(s.payload, []byte{0})]))
 	str += fmt.Sprintf("messageID: %d topics: %s", s.messageID, string(s.payload[:bytes.Index(s.payload, []byte{0})]))
 	return str
 }
 
-func (s *subscribePacket) Pack() []byte {
+func (s *subscribePacket) pack() []byte {
 	var body []byte
 	body = append(body, msgIDToBytes(s.messageID)...)
 	body = append(body, s.payload...)
-	return append(s.FixedHeader.pack(uint32(len(body))), body...)
+	return append(s.fixedHeader.pack(uint32(len(body))), body...)
 }
 
-func (s *subscribePacket) Unpack(packet []byte) {
+func (s *subscribePacket) unpack(packet []byte) {
 	s.messageID = bytesToMsgID(packet[0:2])
 	s.payload = packet[2:]
 	payload := packet[2:]
@@ -641,86 +604,78 @@ func (s *subscribePacket) Unpack(packet []byte) {
 	}
 }
 
-func (s *subscribePacket) MsgID() msgID {
+func (s *subscribePacket) msgID() msgID {
 	return s.messageID
 }
 
-func (s *subscribePacket) SetMsgID(id msgID) {
+func (s *subscribePacket) setMsgID(id msgID) {
 	s.messageID = id
 }
 
-func (s *subscribePacket) QoS() byte {
-	return s.Qos
-}
-
-func (s *subscribePacket) Type() uint8 {
+func (s *subscribePacket) packetType() uint8 {
 	return SUBSCRIBE
 }
 
 //SUBACK packet
 
 type subackPacket struct {
-	FixedHeader
+	fixedHeader
 	messageID   msgID
 	grantedQoss []byte
 }
 
 func (sa *subackPacket) String() string {
-	str := fmt.Sprintf("%s\n", sa.FixedHeader)
+	str := fmt.Sprintf("%s\n", sa.fixedHeader)
 	str += fmt.Sprintf("messageID: %d", sa.messageID)
 	return str
 }
 
-func (sa *subackPacket) Pack() []byte {
+func (sa *subackPacket) pack() []byte {
 	var body []byte
 	body = append(body, msgIDToBytes(sa.messageID)...)
 	body = append(body, sa.grantedQoss...)
-	return append(sa.FixedHeader.pack(uint32(len(body))), body...)
+	return append(sa.fixedHeader.pack(uint32(len(body))), body...)
 }
 
-func (sa *subackPacket) Unpack(packet []byte) {
+func (sa *subackPacket) unpack(packet []byte) {
 	sa.messageID = bytesToMsgID(packet[:2])
 }
 
-func (sa *subackPacket) MsgID() msgID {
+func (sa *subackPacket) msgID() msgID {
 	return sa.messageID
 }
 
-func (sa *subackPacket) SetMsgID(id msgID) {
+func (sa *subackPacket) setMsgID(id msgID) {
 	sa.messageID = id
 }
 
-func (sa *subackPacket) QoS() byte {
-	return sa.Qos
-}
-
-func (sa *subackPacket) Type() uint8 {
+func (sa *subackPacket) packetType() uint8 {
 	return SUBACK
 }
 
 //UNSUBSCRIBE packet
 
 type unsubscribePacket struct {
-	FixedHeader
+	fixedHeader
 	messageID msgID
 	payload   []byte
 	topics    []string
 }
 
 func (u *unsubscribePacket) String() string {
-	str := fmt.Sprintf("%s\n", u.FixedHeader)
+	str := fmt.Sprintf("%s\n", u.fixedHeader)
 	str += fmt.Sprintf("messageID: %d", u.messageID)
 	return str
 }
 
-func (u *unsubscribePacket) Pack() []byte {
+func (u *unsubscribePacket) pack() []byte {
 	var body []byte
 	body = append(body, msgIDToBytes(u.messageID)...)
 	body = append(body, u.payload...)
-	return append(u.FixedHeader.pack(uint32(len(body))), body...)
+	return append(u.fixedHeader.pack(uint32(len(body))), body...)
 }
 
-func (u *unsubscribePacket) Unpack(packet []byte) {
+func (u *unsubscribePacket) unpack(packet []byte) {
 	u.messageID = bytesToMsgID(packet[:2])
 	u.payload = packet[2:]
 	payload := packet[2:]
@@ -730,121 +685,105 @@ func (u *unsubscribePacket) Unpack(packet []byte) {
 	}
 }
 
-func (u *unsubscribePacket) MsgID() msgID {
+func (u *unsubscribePacket) msgID() msgID {
 	return u.messageID
 }
 
-func (u *unsubscribePacket) SetMsgID(id msgID) {
+func (u *unsubscribePacket) setMsgID(id msgID) {
 	u.messageID = id
 }
 
-func (u *unsubscribePacket) QoS() byte {
-	return u.Qos
-}
-
-func (u *unsubscribePacket) Type() uint8 {
+func (u *unsubscribePacket) packetType() uint8 {
 	return UNSUBSCRIBE
 }
 
 //UNSUBACK packet
 
 type unsubackPacket struct {
-	FixedHeader
+	fixedHeader
 	messageID msgID
 }
 
 func (ua *unsubackPacket) String() string {
-	str := fmt.Sprintf("%s\n", ua.FixedHeader)
+	str := fmt.Sprintf("%s\n", ua.fixedHeader)
 	str += fmt.Sprintf("messageID: %d", ua.messageID)
 	return str
 }
 
-func (ua *unsubackPacket) Pack() []byte {
-	return append(ua.FixedHeader.pack(uint32(2)), msgIDToBytes(ua.messageID)...)
+func (ua *unsubackPacket) pack() []byte {
+	return append(ua.fixedHeader.pack(uint32(2)), msgIDToBytes(ua.messageID)...)
 }
 
-func (ua *unsubackPacket) Unpack(packet []byte) {
+func (ua *unsubackPacket) unpack(packet []byte) {
 	ua.messageID = bytesToMsgID(packet[:2])
 }
 
-func (ua *unsubackPacket) MsgID() msgID {
+func (ua *unsubackPacket) msgID() msgID {
 	return ua.messageID
 }
 
-func (ua *unsubackPacket) SetMsgID(id msgID) {
+func (ua *unsubackPacket) setMsgID(id msgID) {
 	ua.messageID = id
 }
 
-func (ua *unsubackPacket) QoS() byte {
-	return ua.Qos
-}
-
-func (ua *unsubackPacket) Type() uint8 {
+func (ua *unsubackPacket) packetType() uint8 {
 	return UNSUBACK
 }
 
 //PINGREQ packet
 
 type pingreqPacket struct {
-	FixedHeader
+	fixedHeader
 }
 
 func (pr *pingreqPacket) String() string {
-	str := fmt.Sprintf("%s", pr.FixedHeader)
+	str := fmt.Sprintf("%s", pr.fixedHeader)
 	return str
 }
 
-func (pr *pingreqPacket) Pack() []byte {
-	return pr.FixedHeader.pack(uint32(0))
+func (pr *pingreqPacket) pack() []byte {
+	return pr.fixedHeader.pack(uint32(0))
 }
 
-func (pr *pingreqPacket) Unpack(packet []byte) {
+func (pr *pingreqPacket) unpack(packet []byte) {
 }
 
-func (pr *pingreqPacket) MsgID() msgID {
+func (pr *pingreqPacket) msgID() msgID {
 	return 0
 }
 
-func (pr *pingreqPacket) SetMsgID(id msgID) {
+func (pr *pingreqPacket) setMsgID(id msgID) {
 }
 
-func (pr *pingreqPacket) QoS() byte {
-	return pr.Qos
-}
-
-func (pr *pingreqPacket) Type() uint8 {
+func (pr *pingreqPacket) packetType() uint8 {
 	return PINGREQ
 }
 
 //PINGRESP packet
 
 type pingrespPacket struct {
-	FixedHeader
+	fixedHeader
 }
 
 func (pr *pingrespPacket) String() string {
-	str := fmt.Sprintf("%s", pr.FixedHeader)
+	str := fmt.Sprintf("%s", pr.fixedHeader)
 	return str
 }
 
-func (pr *pingrespPacket) Pack() []byte {
-	return pr.FixedHeader.pack(uint32(0))
+func (pr *pingrespPacket) pack() []byte {
+	return pr.fixedHeader.pack(uint32(0))
 }
 
-func (pr *pingrespPacket) Unpack(packet []byte) {
+func (pr *pingrespPacket) unpack(packet []byte) {
 }
 
-func (pr *pingrespPacket) MsgID() msgID {
+func (pr *pingrespPacket) msgID() msgID {
 	return 0
 }
 
-func (pr *pingrespPacket) SetMsgID(id msgID) {
+func (pr *pingrespPacket) setMsgID(id msgID) {
 }
 
-func (pr *pingrespPacket) QoS() byte {
-	return pr.Qos
-}
-
-func (pr *pingrespPacket) Type() uint8 {
+func (pr *pingrespPacket) packetType() uint8 {
 	return PINGRESP
 }

@@ -8,7 +8,7 @@ import (
 //The Topic tree is setup so that it branches at every "/" in a topic string, for example;
 //the topic A/B is represented with an unnamed root node, off which is a node called "A",
 //off which is a node called B.
-//Each Node has 2 subscriptions maps of Clients to QoS, HashSub is a record of all clients
+//Each Node has 2 subscriptions maps of clients to QoS, HashSub is a record of all clients
 //who have made a # wildcard subscription at the level past this node. for example a client
 //who subscribes to A/# will have an entry in the HashSub for the node "A"
 //The map called Sub is a similar map of those clients who have subscribed precisely to that
@@ -32,8 +32,8 @@ func NewNode(name string) *Node {
 }
 
 type Entry struct {
-	Client *Client
-	Qos    byte
+	client *Client
+	qos    byte
 }
 
 type Node struct {
@@ -91,7 +91,7 @@ func (n *Node) AddSub(client *Client, subscription []string, qos byte, complete 
 			go n.Nodes[subTopic].AddSub(client, subscription[1:], qos, complete)
 		}
 	//if the length of subscription is 0 then we have reached the end of the topic list and
-	//should add this Client to our Sub map. Once done check if this node has a retained
+	//should add this client to our Sub map. Once done check if this node has a retained
 	//message, if so send it (or drop if the channel is full)
 	case x == 0:
 		n.Sub[client] = qos
@@ -267,7 +267,7 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hr
 		close(recipients)
 	}()
 
-	//loop and receive the entries (struct of Client pointer and QoS) from the recipients channel
+	//loop and receive the entries (struct of client pointer and QoS) from the recipients channel
 	//using the two value form of reading from a channel so we know when the little goroutine
 	//previously has closed the channel and we have all the recipients
 	for {
@@ -279,10 +279,10 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hr
 			//the minimum Qos value of this calculation and the Qos the message was originally sent
 			//with. If this is the first time we've seen this client we just calculate the minimum
 			//of the subscription Qos and the message Qos
-			if currQos, ok := deliverList[entry.Client]; ok {
-				deliverList[entry.Client] = calcMinQos(calcMaxQos(currQos, entry.Qos), message.Qos)
+			if currQos, ok := deliverList[entry.client]; ok {
+				deliverList[entry.client] = calcMinQos(calcMaxQos(currQos, entry.qos), message.qos)
 			} else {
-				deliverList[entry.Client] = calcMinQos(entry.Qos, message.Qos)
+				deliverList[entry.client] = calcMinQos(entry.qos, message.qos)
 			}
 		} else {
 			break
@@ -293,7 +293,7 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hr
 	//QoS 0 subscribers and sent a pointer to this single message to all delivery routines for those
 	//clients, here we create that one QoS0 message
 	zeroCopy := message.Copy()
-	zeroCopy.Qos = 0
+	zeroCopy.qos = 0
 	//now we range through the delivery list with the client pointer and the QoS to send the message
 	//to them at.
 	for client, subQos := range deliverList {
@@ -308,7 +308,7 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hr
 		if subQos > 0 {
 			go func(client *Client, subQos byte) {
 				deliveryMessage := message.Copy()
-				deliveryMessage.Qos = subQos
+				deliveryMessage.qos = subQos
 				if client.Connected() {
 					select {
 					case deliveryMessage.messageID = <-client.idChan:

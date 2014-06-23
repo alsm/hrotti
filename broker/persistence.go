@@ -1,17 +1,20 @@
 package hrotti
 
-type PersistenceBatchEntry struct {
-	id      msgID
-	message publishPacket
-}
+type dirFlag byte
+
+const (
+	INBOUND  = 1
+	OUTBOUND = 2
+)
 
 type Persistence interface {
+	Init() Persistence
 	Open(*Client)
 	Close(*Client)
-	Add(*Client, ControlPacket) bool
-	Replace(*Client, ControlPacket) bool
+	Add(*Client, dirFlag, ControlPacket) bool
+	Replace(*Client, dirFlag, ControlPacket) bool
 	AddBatch(map[*Client]*publishPacket)
-	Delete(*Client, msgID) bool
+	Delete(*Client, dirFlag, msgID) bool
 	GetAll(*Client) []ControlPacket
 	Exists(*Client) bool
 }

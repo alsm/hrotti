@@ -14,13 +14,13 @@ import (
 )
 
 type Hrotti struct {
-	inboundPersist     Persistence
-	outboundPersist    Persistence
+	PersistStore       Persistence
 	listeners          map[string]*internalListener
 	listenersWaitGroup sync.WaitGroup
 	maxQueueDepth      int
 	clients            Clients
 	internalMsgIDs     *internalIDs
+	rootNode           *Node
 }
 
 type internalListener struct {
@@ -30,17 +30,18 @@ type internalListener struct {
 	stop        chan struct{}
 }
 
-func NewHrotti(maxQueueDepth int) *Hrotti {
+func NewHrotti(maxQueueDepth int, persistence Persistence) *Hrotti {
 	h := &Hrotti{
-		inboundPersist:  NewMemoryPersistence(),
-		outboundPersist: NewMemoryPersistence(),
-		listeners:       make(map[string]*internalListener),
-		maxQueueDepth:   maxQueueDepth,
-		clients:         NewClients(),
-		internalMsgIDs:  &internalIDs{},
+		PersistStore:   persistence,
+		listeners:      make(map[string]*internalListener),
+		maxQueueDepth:  maxQueueDepth,
+		clients:        NewClients(),
+		internalMsgIDs: &internalIDs{},
+		rootNode:       NewNode(""),
 	}
 	//start the goroutine that generates internal message ids for when clients receive messages
 	//but are not connected.
+	h.PersistStore.Init()
 	h.internalMsgIDs.generateIDs()
 	return h
 }

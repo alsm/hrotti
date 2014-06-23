@@ -123,8 +123,7 @@ func (c *Client) Stop(sendWill bool, hrotti *Hrotti) {
 				delete(hrotti.clients.list, c.clientID)
 				hrotti.clients.Unlock()
 				c.rootNode.DeleteSubAll(c)
-				hrotti.inboundPersist.Close(c)
-				hrotti.outboundPersist.Close(c)
+				hrotti.PersistStore.Close(c)
 			}
 		})
 	}
@@ -152,14 +151,13 @@ func (c *Client) Start(cp *connectPacket, hrotti *Hrotti) {
 
 	//If cleansession true, or there doesn't already exist a persistence store for this client (ie a new
 	//durable client), create the inbound and outbound persistence stores.
-	if c.cleanSession || !hrotti.inboundPersist.Exists(c) || !hrotti.outboundPersist.Exists(c) {
-		hrotti.inboundPersist.Open(c)
-		hrotti.outboundPersist.Open(c)
+	if c.cleanSession || !hrotti.PersistStore.Exists(c) {
+		hrotti.PersistStore.Open(c)
 	} else {
 		//we have an existing inbound and outbound persistence store for this client already, so lets
 		//get any messages still in outbound and attempt to send them.
 		INFO.Println("Getting unacknowledged messages from persistence")
-		for _, msg := range hrotti.outboundPersist.GetAll(c) {
+		for _, msg := range hrotti.PersistStore.GetAll(c) {
 			switch msg.Type() {
 			//If the message in the store is a publish packet
 			case PUBLISH:
@@ -277,7 +275,7 @@ func (c *Client) Receive(hrotti *Hrotti) {
 				pp.Unpack(body)
 				PROTOCOL.Println("Received PUBLISH from", c.clientID, pp.topicName)
 				if pp.Qos > 0 {
-					hrotti.inboundPersist.Add(c, pp)
+					hrotti.PersistStore.Add(c, INBOUND, pp)
 				}
 				//if this message has the retained flag set then set as the retained message for the
 				//appropriate node in the topic tree
@@ -305,7 +303,7 @@ func (c *Client) Receive(hrotti *Hrotti) {
 				//Check that we also think this message id is in use, if it is remove the original
 				//PUBLISH from the outbound persistence store and set the message id as free for reuse
 				if c.inUse(pa.messageID) {
-					hrotti.outboundPersist.Delete(c, pa.messageID)
+					hrotti.PersistStore.Delete(c, OUTBOUND, pa.messageID)
 					c.freeID(pa.messageID)
 				} else {
 					ERROR.Println("Received a PUBACK for unknown msgid", pa.messageID, "from", c.clientID)
@@ -342,7 +340,7 @@ func (c *Client) Receive(hrotti *Hrotti) {
 				pc.FixedHeader = cph
 				pc.Unpack(body)
 				if c.inUse(pc.messageID) {
-					hrotti.outboundPersist.Delete(c, pc.messageID)
+					hrotti.PersistStore.Delete(c, OUTBOUND, pc.messageID)
 					c.freeID(pc.messageID)
 				} else {
 					ERROR.Println("Received a PUBCOMP for unknown msgid", pc.messageID, "from", c.clientID)
@@ -383,9 +381,9 @@ func (c *Client) Receive(hrotti *Hrotti) {
 func (c *Client) HandleFlow(msg ControlPacket, hrotti *Hrotti) {
 	switch msg.Type() {
 	case PUBREL:
-		hrotti.outboundPersist.Replace(c, msg)
+		hrotti.PersistStore.Replace(c, OUTBOUND, msg)
 	case PUBACK, PUBCOMP:
-		hrotti.inboundPersist.Delete(c, msg.MsgID())
+		hrotti.PersistStore.Delete(c, INBOUND, msg.MsgID())
 	}
 	//send to channel if open, silently drop if channel closed
 	select {
@@ -414,8 +412,8 @@ func (c *Client) Send(hrotti *Hrotti) {
 				if msg.MsgID() >= internalIDMin {
 					internalID := msg.MsgID()
 					msg.SetMsgID(<-c.idChan)
-					hrotti.outboundPersist.Add(c, msg)
-					hrotti.outboundPersist.Delete(c, internalID)
+					hrotti.PersistStore.Add(c, OUTBOUND, msg)
+					hrotti.PersistStore.Delete(c, OUTBOUND, internalID)
 					hrotti.internalMsgIDs.freeID(internalID)
 				}
 				_, err := c.conn.Write(msg.Pack())
@@ -431,8 +429,8 @@ func (c *Client) Send(hrotti *Hrotti) {
 					internalID := msg.MsgID()
 					PROTOCOL.Println("Internal Id message", internalID, "for", c.clientID)
 					msg.SetMsgID(<-c.idChan)
-					hrotti.outboundPersist.Add(c, msg)
-					hrotti.outboundPersist.Delete(c, internalID)
+					hrotti.PersistStore.Add(c, OUTBOUND, msg)
+					hrotti.PersistStore.Delete(c, OUTBOUND, internalID)
 					hrotti.internalMsgIDs.freeID(internalID)
 				}
 				_, err := c.conn.Write(msg.Pack())

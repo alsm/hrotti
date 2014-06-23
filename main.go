@@ -40,7 +40,7 @@ func createConfig() BrokerConfig {
 func main() {
 	config := createConfig()
 
-	h := NewHrotti(config.MaxQueueDepth)
+	h := NewHrotti(config.MaxQueueDepth, &MemoryPersistence{})
 
 	for name, listener := range config.Listeners {
 		h.AddListener(name, listener)

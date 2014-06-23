@@ -314,14 +314,14 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hr
 					case deliveryMessage.messageID = <-client.idChan:
 					case deliveryMessage.messageID = <-hrotti.internalMsgIDs.idChan:
 					}
-					hrotti.outboundPersist.Add(client, deliveryMessage)
+					hrotti.PersistStore.Add(client, OUTBOUND, deliveryMessage)
 					select {
 					case client.outboundMessages <- deliveryMessage:
 					default:
 					}
 				} else {
 					deliveryMessage.messageID = <-hrotti.internalMsgIDs.idChan
-					hrotti.outboundPersist.Add(client, deliveryMessage)
+					hrotti.PersistStore.Add(client, OUTBOUND, deliveryMessage)
 				}
 			}(client, subQos)
 		} else if client.Connected() {

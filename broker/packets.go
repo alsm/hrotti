@@ -292,6 +292,10 @@ func (c *connectPacket) Validate() byte {
 	if c.reservedBit != 0 {
 		return CONN_PROTOCOL_VIOLATION
 	}
+	if (c.protocolName == "MQIsdp" && c.protocolVersion != 3) || (c.protocolName == "MQTT" && c.protocolVersion != 4) {
+		ERROR.Println("Bad protocol version", c.protocolName, c.protocolVersion)
+		return CONN_REF_BAD_PROTO_VER
+	}
 	if c.protocolName != "MQIsdp" && c.protocolName != "MQTT" {
 		ERROR.Println("Bad protocol name", c.protocolName)
 		return CONN_PROTOCOL_VIOLATION

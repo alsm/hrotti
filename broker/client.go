@@ -2,7 +2,7 @@ package hrotti
 
 import (
 	//"errors"
-	. "github.com/alsm/hrotti/broker/packets"
+	. "github.com/alsm/hrotti/packets"
 	//"io"
 	"net"
 	"strings"

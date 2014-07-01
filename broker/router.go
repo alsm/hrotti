@@ -2,8 +2,7 @@ package hrotti
 
 import (
 	"fmt"
-	"github.com/alsm/hrotti/broker/packets"
-	. "github.com/alsm/hrotti/broker/packets"
+	. "github.com/alsm/hrotti/packets"
 	"sync"
 )
 
@@ -44,7 +43,7 @@ type Node struct {
 	HashSub  map[*Client]byte
 	Sub      map[*Client]byte
 	Nodes    map[string]*Node
-	Retained *packets.PublishPacket
+	Retained *PublishPacket
 }
 
 func (n *Node) Print(prefix string) string {

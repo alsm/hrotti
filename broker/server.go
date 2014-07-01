@@ -9,7 +9,7 @@ import (
 
 	"code.google.com/p/go-uuid/uuid"
 	"code.google.com/p/go.net/websocket"
-	. "github.com/alsm/hrotti/broker/packets"
+	. "github.com/alsm/hrotti/packets"
 )
 
 type Hrotti struct {

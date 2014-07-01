@@ -1,5 +1,9 @@
 package hrotti
 
+import (
+	. "github.com/alsm/hrotti/broker/packets"
+)
+
 type dirFlag byte
 
 const (
@@ -8,13 +12,13 @@ const (
 )
 
 type Persistence interface {
-	Init() Persistence
+	Init() error
 	Open(*Client)
 	Close(*Client)
-	Add(*Client, dirFlag, controlPacket) bool
-	Replace(*Client, dirFlag, controlPacket) bool
-	AddBatch(map[*Client]*publishPacket)
-	Delete(*Client, dirFlag, msgID) bool
-	GetAll(*Client) []controlPacket
+	Add(*Client, dirFlag, ControlPacket) bool
+	Replace(*Client, dirFlag, ControlPacket) bool
+	AddBatch(map[*Client]*PublishPacket)
+	Delete(*Client, dirFlag, uint16) bool
+	GetAll(*Client) []ControlPacket
 	Exists(*Client) bool
 }

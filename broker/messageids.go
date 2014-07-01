@@ -8,13 +8,13 @@ type msgID uint32
 
 type messageIDs struct {
 	sync.RWMutex
-	idChan chan msgID
-	index  map[msgID]bool
+	idChan chan uint16
+	index  map[uint16]bool
 }
 
 const (
-	msgIDMax msgID = 65535
-	msgIDMin msgID = 1
+	msgIDMax uint16 = 65535
+	msgIDMin uint16 = 1
 )
 
 func (c *Client) genMsgIDs() {
@@ -37,13 +37,13 @@ func (c *Client) genMsgIDs() {
 	}
 }
 
-func (m *messageIDs) inUse(id msgID) bool {
+func (m *messageIDs) inUse(id uint16) bool {
 	m.RLock()
 	defer m.RUnlock()
 	return m.index[id]
 }
 
-func (m *messageIDs) freeID(id msgID) {
+func (m *messageIDs) freeID(id uint16) {
 	defer m.Unlock()
 	m.Lock()
 	m.index[id] = false

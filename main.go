@@ -40,7 +40,9 @@ func createConfig() BrokerConfig {
 func main() {
 	config := createConfig()
 
-	h := NewHrotti(config.MaxQueueDepth, &MemoryPersistence{})
+	//r := &RedisPersistence{Server: ":6379"}
+	r := &MemoryPersistence{}
+	h := NewHrotti(config.MaxQueueDepth, r)
 
 	for name, listener := range config.Listeners {
 		h.AddListener(name, listener)

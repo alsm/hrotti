@@ -2,6 +2,8 @@ package hrotti
 
 import (
 	"fmt"
+	"github.com/alsm/hrotti/broker/packets"
+	. "github.com/alsm/hrotti/broker/packets"
 	"sync"
 )
 
@@ -42,7 +44,7 @@ type Node struct {
 	HashSub  map[*Client]byte
 	Sub      map[*Client]byte
 	Nodes    map[string]*Node
-	Retained *publishPacket
+	Retained *packets.PublishPacket
 }
 
 func (n *Node) Print(prefix string) string {
@@ -185,7 +187,7 @@ func (n *Node) DeleteSubAll(client *Client) {
 	}
 }
 
-func (n *Node) SetRetained(topic []string, message *publishPacket) {
+func (n *Node) SetRetained(topic []string, message *PublishPacket) {
 	n.Lock()
 	defer n.Unlock()
 	switch x := len(topic); {
@@ -201,7 +203,7 @@ func (n *Node) SetRetained(topic []string, message *publishPacket) {
 	//a nil value payload has a special meaning that says if there is currently a retained
 	//message set for this Node it should be removed.
 	case x == 0:
-		if len(message.payload) == 0 {
+		if len(message.Payload) == 0 {
 			n.Retained = nil
 		} else {
 			n.Retained = message
@@ -245,7 +247,7 @@ func (n *Node) FindRecipients(topic []string, recipients chan *Entry, wg *sync.W
 	}
 }
 
-func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hrotti) {
+func (n *Node) DeliverMessage(topic []string, message *PublishPacket, hrotti *Hrotti) {
 	//to workout who we have to deliver a message to we need to trawl the topic space finding
 	//all matching subscribers on the way, due to wild card this wont necessarily be a single
 	//path from the root node to the end of the topic, and as each Node is looked at by an
@@ -254,7 +256,7 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hr
 	var treeWorkers sync.WaitGroup
 	recipients := make(chan *Entry)
 	deliverList := make(map[*Client]byte)
-	//persistList := make(map[*Client]*publishPacket)
+	//persistList := make(map[*Client]*PublishPacket)
 
 	//start the process to go and find all the appropriate recipients for this message
 	treeWorkers.Add(1)
@@ -280,9 +282,9 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hr
 			//with. If this is the first time we've seen this client we just calculate the minimum
 			//of the subscription Qos and the message Qos
 			if currQos, ok := deliverList[entry.client]; ok {
-				deliverList[entry.client] = calcMinQos(calcMaxQos(currQos, entry.qos), message.qos)
+				deliverList[entry.client] = calcMinQos(calcMaxQos(currQos, entry.qos), message.Qos)
 			} else {
-				deliverList[entry.client] = calcMinQos(entry.qos, message.qos)
+				deliverList[entry.client] = calcMinQos(entry.qos, message.Qos)
 			}
 		} else {
 			break
@@ -293,7 +295,7 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hr
 	//QoS 0 subscribers and sent a pointer to this single message to all delivery routines for those
 	//clients, here we create that one QoS0 message
 	zeroCopy := message.Copy()
-	zeroCopy.qos = 0
+	zeroCopy.Qos = 0
 	//now we range through the delivery list with the client pointer and the QoS to send the message
 	//to them at.
 	for client, subQos := range deliverList {
@@ -308,11 +310,10 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hr
 		if subQos > 0 {
 			go func(client *Client, subQos byte) {
 				deliveryMessage := message.Copy()
-				deliveryMessage.qos = subQos
+				deliveryMessage.Qos = subQos
 				if client.Connected() {
 					select {
-					case deliveryMessage.messageID = <-client.idChan:
-					case deliveryMessage.messageID = <-hrotti.internalMsgIDs.idChan:
+					case deliveryMessage.MessageID = <-client.idChan:
 					}
 					hrotti.PersistStore.Add(client, OUTBOUND, deliveryMessage)
 					select {
@@ -320,7 +321,6 @@ func (n *Node) DeliverMessage(topic []string, message *publishPacket, hrotti *Hr
 					default:
 					}
 				} else {
-					deliveryMessage.messageID = <-hrotti.internalMsgIDs.idChan
 					hrotti.PersistStore.Add(client, OUTBOUND, deliveryMessage)
 				}
 			}(client, subQos)

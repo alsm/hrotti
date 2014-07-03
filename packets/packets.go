@@ -72,17 +72,23 @@ var ConnackReturnCodes = map[uint8]string{
 	255: "Connection Refused: Protocol Violation",
 }
 
-func ReadPacket(r io.Reader) ControlPacket {
+func ReadPacket(r io.Reader) (cp ControlPacket, err error) {
 	var fh FixedHeader
 	var b [1]byte
 
-	io.ReadFull(r, b[:])
+	_, err = io.ReadFull(r, b[:])
+	if err != nil {
+		return nil, err
+	}
 	fh.unpack(b[0], r)
-	cp := NewControlPacketWithHeader(fh)
+	cp = NewControlPacketWithHeader(fh)
 	packetBytes := make([]byte, fh.RemainingLength)
-	io.ReadFull(r, packetBytes)
+	_, err = io.ReadFull(r, packetBytes)
+	if err != nil {
+		return nil, err
+	}
 	cp.Unpack(bytes.NewBuffer(packetBytes))
-	return cp
+	return cp, nil
 }
 
 func NewControlPacket(packetType byte) ControlPacket {

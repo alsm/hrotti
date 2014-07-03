@@ -161,7 +161,8 @@ func (h *Hrotti) InitClient(conn net.Conn) {
 	cp := newControlPacket(CONNECT).(*connectPacket)
 	cp.fixedHeader = cph
 	cp.unpack(body)*/
-	cp := ReadPacket(conn).(*ConnectPacket)
+	rp, _ := ReadPacket(conn)
+	cp := rp.(*ConnectPacket)
 
 	//Validate the CONNECT, check fields, values etc.
 	rc := cp.Validate()

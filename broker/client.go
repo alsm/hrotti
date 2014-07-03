@@ -254,7 +254,11 @@ func (c *Client) Receive(hrotti *Hrotti) {
 			//we've recevied the message.
 			c.ResetTimer()
 			//switch on the type of message we've received*/
-			cp := ReadPacket(c.conn)
+			cp, err := ReadPacket(c.conn)
+			if err != nil {
+				go c.Stop(true, hrotti)
+				return
+			}
 			switch cp.PacketType() {
 			//a second CONNECT packet is a protocol violation, so Stop (send will) and return.
 			case CONNECT:

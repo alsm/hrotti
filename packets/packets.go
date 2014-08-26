@@ -2,19 +2,18 @@ package packets
 
 import (
 	"bytes"
+	"code.google.com/p/go-uuid/uuid"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 )
 
 type ControlPacket interface {
-	Write(io.Writer)
-	Unpack(*bytes.Buffer)
-	PacketType() uint8
-	SetMsgID(uint16)
-	MsgID() uint16
+	Write(io.Writer) error
+	Unpack(io.Reader)
 	String() string
-	RequiresMsgID() bool
+	Details() Details
 	//Validate() bool
 }
 
@@ -59,6 +58,7 @@ const (
 	CONN_REF_SERV_UNAVAIL   = 0x03
 	CONN_REF_BAD_USER_PASS  = 0x04
 	CONN_REF_NOT_AUTH       = 0x05
+	CONN_NETWORK_ERROR      = 0xFE
 	CONN_PROTOCOL_VIOLATION = 0xFF
 )
 
@@ -74,14 +74,17 @@ var ConnackReturnCodes = map[uint8]string{
 
 func ReadPacket(r io.Reader) (cp ControlPacket, err error) {
 	var fh FixedHeader
-	var b [1]byte
+	b := make([]byte, 1)
 
-	_, err = io.ReadFull(r, b[:])
+	_, err = io.ReadFull(r, b)
 	if err != nil {
 		return nil, err
 	}
 	fh.unpack(b[0], r)
 	cp = NewControlPacketWithHeader(fh)
+	if cp == nil {
+		return nil, errors.New("Bad data from client")
+	}
 	packetBytes := make([]byte, fh.RemainingLength)
 	_, err = io.ReadFull(r, packetBytes)
 	if err != nil {
@@ -91,76 +94,81 @@ func ReadPacket(r io.Reader) (cp ControlPacket, err error) {
 	return cp, nil
 }
 
-func NewControlPacket(packetType byte) ControlPacket {
+func NewControlPacket(packetType byte) (cp ControlPacket) {
 	switch packetType {
 	case CONNECT:
-		return &ConnectPacket{FixedHeader: FixedHeader{MessageType: CONNECT}}
+		cp = &ConnectPacket{FixedHeader: FixedHeader{MessageType: CONNECT}, UUID: uuid.NewUUID()}
 	case CONNACK:
-		return &ConnackPacket{FixedHeader: FixedHeader{MessageType: CONNACK}}
+		cp = &ConnackPacket{FixedHeader: FixedHeader{MessageType: CONNACK}, UUID: uuid.NewUUID()}
 	case DISCONNECT:
-		return &DisconnectPacket{FixedHeader: FixedHeader{MessageType: DISCONNECT}}
+		cp = &DisconnectPacket{FixedHeader: FixedHeader{MessageType: DISCONNECT}, UUID: uuid.NewUUID()}
 	case PUBLISH:
-		return &PublishPacket{FixedHeader: FixedHeader{MessageType: PUBLISH}}
+		cp = &PublishPacket{FixedHeader: FixedHeader{MessageType: PUBLISH}, UUID: uuid.NewUUID()}
 	case PUBACK:
-		return &PubackPacket{FixedHeader: FixedHeader{MessageType: PUBACK}}
+		cp = &PubackPacket{FixedHeader: FixedHeader{MessageType: PUBACK}, UUID: uuid.NewUUID()}
 	case PUBREC:
-		return &PubrecPacket{FixedHeader: FixedHeader{MessageType: PUBREC}}
+		cp = &PubrecPacket{FixedHeader: FixedHeader{MessageType: PUBREC}, UUID: uuid.NewUUID()}
 	case PUBREL:
-		return &PubrelPacket{FixedHeader: FixedHeader{MessageType: PUBREL, Qos: 1}}
+		cp = &PubrelPacket{FixedHeader: FixedHeader{MessageType: PUBREL, Qos: 1}, UUID: uuid.NewUUID()}
 	case PUBCOMP:
-		return &PubcompPacket{FixedHeader: FixedHeader{MessageType: PUBCOMP}}
+		cp = &PubcompPacket{FixedHeader: FixedHeader{MessageType: PUBCOMP}, UUID: uuid.NewUUID()}
 	case SUBSCRIBE:
-		return &SubscribePacket{FixedHeader: FixedHeader{MessageType: SUBSCRIBE, Qos: 1}}
+		cp = &SubscribePacket{FixedHeader: FixedHeader{MessageType: SUBSCRIBE, Qos: 1}, UUID: uuid.NewUUID()}
 	case SUBACK:
-		return &SubackPacket{FixedHeader: FixedHeader{MessageType: SUBACK}}
+		cp = &SubackPacket{FixedHeader: FixedHeader{MessageType: SUBACK}, UUID: uuid.NewUUID()}
 	case UNSUBSCRIBE:
-		return &UnsubscribePacket{FixedHeader: FixedHeader{MessageType: UNSUBSCRIBE}}
+		cp = &UnsubscribePacket{FixedHeader: FixedHeader{MessageType: UNSUBSCRIBE}, UUID: uuid.NewUUID()}
 	case UNSUBACK:
-		return &UnsubackPacket{FixedHeader: FixedHeader{MessageType: UNSUBACK}}
+		cp = &UnsubackPacket{FixedHeader: FixedHeader{MessageType: UNSUBACK}, UUID: uuid.NewUUID()}
 	case PINGREQ:
-		return &PingreqPacket{FixedHeader: FixedHeader{MessageType: PINGREQ}}
+		cp = &PingreqPacket{FixedHeader: FixedHeader{MessageType: PINGREQ}, UUID: uuid.NewUUID()}
 	case PINGRESP:
-		return &PingrespPacket{FixedHeader: FixedHeader{MessageType: PINGRESP}}
+		cp = &PingrespPacket{FixedHeader: FixedHeader{MessageType: PINGRESP}, UUID: uuid.NewUUID()}
 	default:
-		break
+		return nil
 	}
-	return nil
+	return cp
 }
 
-func NewControlPacketWithHeader(fh FixedHeader) ControlPacket {
+func NewControlPacketWithHeader(fh FixedHeader) (cp ControlPacket) {
 	switch fh.MessageType {
 	case CONNECT:
-		return &ConnectPacket{FixedHeader: fh}
+		cp = &ConnectPacket{FixedHeader: fh, UUID: uuid.NewUUID()}
 	case CONNACK:
-		return &ConnackPacket{FixedHeader: fh}
+		cp = &ConnackPacket{FixedHeader: fh, UUID: uuid.NewUUID()}
 	case DISCONNECT:
-		return &DisconnectPacket{FixedHeader: fh}
+		cp = &DisconnectPacket{FixedHeader: fh, UUID: uuid.NewUUID()}
 	case PUBLISH:
-		return &PublishPacket{FixedHeader: fh}
+		cp = &PublishPacket{FixedHeader: fh, UUID: uuid.NewUUID()}
 	case PUBACK:
-		return &PubackPacket{FixedHeader: fh}
+		cp = &PubackPacket{FixedHeader: fh, UUID: uuid.NewUUID()}
 	case PUBREC:
-		return &PubrecPacket{FixedHeader: fh}
+		cp = &PubrecPacket{FixedHeader: fh, UUID: uuid.NewUUID()}
 	case PUBREL:
-		return &PubrelPacket{FixedHeader: fh}
+		cp = &PubrelPacket{FixedHeader: fh, UUID: uuid.NewUUID()}
 	case PUBCOMP:
-		return &PubcompPacket{FixedHeader: fh}
+		cp = &PubcompPacket{FixedHeader: fh, UUID: uuid.NewUUID()}
 	case SUBSCRIBE:
-		return &SubscribePacket{FixedHeader: fh}
+		cp = &SubscribePacket{FixedHeader: fh, UUID: uuid.NewUUID()}
 	case SUBACK:
-		return &SubackPacket{FixedHeader: fh}
+		cp = &SubackPacket{FixedHeader: fh, UUID: uuid.NewUUID()}
 	case UNSUBSCRIBE:
-		return &UnsubscribePacket{FixedHeader: fh}
+		cp = &UnsubscribePacket{FixedHeader: fh, UUID: uuid.NewUUID()}
 	case UNSUBACK:
-		return &UnsubackPacket{FixedHeader: fh}
+		cp = &UnsubackPacket{FixedHeader: fh, UUID: uuid.NewUUID()}
 	case PINGREQ:
-		return &PingreqPacket{FixedHeader: fh}
+		cp = &PingreqPacket{FixedHeader: fh, UUID: uuid.NewUUID()}
 	case PINGRESP:
-		return &PingrespPacket{FixedHeader: fh}
+		cp = &PingrespPacket{FixedHeader: fh, UUID: uuid.NewUUID()}
 	default:
-		break
+		return nil
 	}
-	return nil
+	return cp
+}
+
+type Details struct {
+	Qos       byte
+	MessageID uint16
 }
 
 type FixedHeader struct {
@@ -172,7 +180,7 @@ type FixedHeader struct {
 }
 
 func (fh FixedHeader) String() string {
-	return fmt.Sprintf("%s: dup: %d qos: %d retain: %d rLength: %d", PacketNames[fh.MessageType], fh.Dup, fh.Qos, fh.Retain, fh.RemainingLength)
+	return fmt.Sprintf("%s: dup: %t qos: %d retain: %t rLength: %d", PacketNames[fh.MessageType], fh.Dup, fh.Qos, fh.Retain, fh.RemainingLength)
 }
 
 func boolToByte(b bool) byte {
@@ -199,19 +207,13 @@ func (fh *FixedHeader) unpack(typeAndFlags byte, r io.Reader) {
 	fh.RemainingLength = decodeLength(r)
 }
 
-func encodeString(field string) []byte {
-	fieldLength := make([]byte, 2)
-	binary.BigEndian.PutUint16(fieldLength, uint16(len(field)))
-	return append(fieldLength, []byte(field)...)
+func decodeByte(b io.Reader) byte {
+	num := make([]byte, 1)
+	b.Read(num)
+	return num[0]
 }
 
-func encodeBytes(field []byte) []byte {
-	fieldLength := make([]byte, 2)
-	binary.BigEndian.PutUint16(fieldLength, uint16(len(field)))
-	return append(fieldLength, field...)
-}
-
-func decodeUint16(b *bytes.Buffer) uint16 {
+func decodeUint16(b io.Reader) uint16 {
 	num := make([]byte, 2)
 	b.Read(num)
 	return binary.BigEndian.Uint16(num)
@@ -223,18 +225,30 @@ func encodeUint16(num uint16) []byte {
 	return bytes
 }
 
-func decodeString(b *bytes.Buffer) string {
+func encodeString(field string) []byte {
+	fieldLength := make([]byte, 2)
+	binary.BigEndian.PutUint16(fieldLength, uint16(len(field)))
+	return append(fieldLength, []byte(field)...)
+}
+
+func decodeString(b io.Reader) string {
 	fieldLength := decodeUint16(b)
 	field := make([]byte, fieldLength)
 	b.Read(field)
 	return string(field)
 }
 
-func decodeBytes(b *bytes.Buffer) []byte {
+func decodeBytes(b io.Reader) []byte {
 	fieldLength := decodeUint16(b)
 	field := make([]byte, fieldLength)
 	b.Read(field)
 	return field
+}
+
+func encodeBytes(field []byte) []byte {
+	fieldLength := make([]byte, 2)
+	binary.BigEndian.PutUint16(fieldLength, uint16(len(field)))
+	return append(fieldLength, field...)
 }
 
 func encodeLength(length int) []byte {
@@ -267,8 +281,4 @@ func decodeLength(r io.Reader) int {
 		multiplier += 7
 	}
 	return int(rLength)
-}
-
-func packetType(mType byte) byte {
-	return mType >> 4
 }

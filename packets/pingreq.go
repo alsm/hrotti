@@ -1,7 +1,7 @@
 package packets
 
 import (
-	"bytes"
+	"code.google.com/p/go-uuid/uuid"
 	"fmt"
 	"io"
 )
@@ -10,6 +10,7 @@ import (
 
 type PingreqPacket struct {
 	FixedHeader
+	UUID uuid.UUID
 }
 
 func (pr *PingreqPacket) String() string {
@@ -17,25 +18,16 @@ func (pr *PingreqPacket) String() string {
 	return str
 }
 
-func (pr *PingreqPacket) Write(w io.Writer) {
+func (pr *PingreqPacket) Write(w io.Writer) error {
 	header := pr.FixedHeader.pack()
-	w.Write(header.Bytes())
+	_, err := w.Write(header.Bytes())
+
+	return err
 }
 
-func (pr *PingreqPacket) Unpack(b *bytes.Buffer) {
+func (pr *PingreqPacket) Unpack(b io.Reader) {
 }
 
-func (pr *PingreqPacket) MsgID() uint16 {
-	return 0
-}
-
-func (pr *PingreqPacket) SetMsgID(id uint16) {
-}
-
-func (pr *PingreqPacket) PacketType() uint8 {
-	return PINGREQ
-}
-
-func (pr *PingreqPacket) RequiresMsgID() bool {
-	return false
+func (pr *PingreqPacket) Details() Details {
+	return Details{Qos: 0, MessageID: 0}
 }

@@ -2,6 +2,7 @@ package packets
 
 import (
 	"bytes"
+	"code.google.com/p/go-uuid/uuid"
 	"fmt"
 	"io"
 )
@@ -13,6 +14,7 @@ type PublishPacket struct {
 	TopicName string
 	MessageID uint16
 	Payload   []byte
+	UUID      uuid.UUID
 }
 
 func (p *PublishPacket) String() string {
@@ -22,8 +24,9 @@ func (p *PublishPacket) String() string {
 	return str
 }
 
-func (p *PublishPacket) Write(w io.Writer) {
+func (p *PublishPacket) Write(w io.Writer) error {
 	var body bytes.Buffer
+	var err error
 
 	body.Write(encodeString(p.TopicName))
 	if p.Qos > 0 {
@@ -32,20 +35,24 @@ func (p *PublishPacket) Write(w io.Writer) {
 	p.FixedHeader.RemainingLength = body.Len() + len(p.Payload)
 	header := p.FixedHeader.pack()
 
-	w.Write(header.Bytes())
-	w.Write(body.Bytes())
-	w.Write(p.Payload)
+	_, err = w.Write(header.Bytes())
+	_, err = w.Write(body.Bytes())
+	_, err = w.Write(p.Payload)
 
+	return err
 }
 
-func (p *PublishPacket) Unpack(b *bytes.Buffer) {
+func (p *PublishPacket) Unpack(b io.Reader) {
+	var payloadLength = p.FixedHeader.RemainingLength
 	p.TopicName = decodeString(b)
 	if p.Qos > 0 {
 		p.MessageID = decodeUint16(b)
-		p.Payload = b.Bytes()
+		payloadLength -= len(p.TopicName) + 4
 	} else {
-		p.Payload = b.Bytes()
+		payloadLength -= len(p.TopicName) + 2
 	}
+	p.Payload = make([]byte, payloadLength)
+	b.Read(p.Payload)
 }
 
 func (p *PublishPacket) Copy() *PublishPacket {
@@ -56,21 +63,6 @@ func (p *PublishPacket) Copy() *PublishPacket {
 	return newP
 }
 
-func (p *PublishPacket) MsgID() uint16 {
-	return p.MessageID
-}
-
-func (p *PublishPacket) SetMsgID(id uint16) {
-	p.MessageID = id
-}
-
-func (p *PublishPacket) PacketType() uint8 {
-	return PUBLISH
-}
-
-func (p *PublishPacket) RequiresMsgID() bool {
-	if p.Qos > 0 {
-		return true
-	}
-	return false
+func (p *PublishPacket) Details() Details {
+	return Details{Qos: p.Qos, MessageID: p.MessageID}
 }

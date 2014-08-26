@@ -18,7 +18,6 @@ type Hrotti struct {
 	listenersWaitGroup sync.WaitGroup
 	maxQueueDepth      int
 	clients            clients
-	rootNode           *Node
 }
 
 type internalListener struct {
@@ -34,7 +33,6 @@ func NewHrotti(maxQueueDepth int, persistence Persistence) *Hrotti {
 		listeners:     make(map[string]*internalListener),
 		maxQueueDepth: maxQueueDepth,
 		clients:       newClients(),
-		rootNode:      NewNode(""),
 	}
 	//start the goroutine that generates internal message ids for when clients receive messages
 	//but are not connected.
@@ -193,7 +191,7 @@ func (h *Hrotti) InitClient(conn net.Conn) {
 	//Lock the clients hashmap while we check if we already know this clientid.
 	h.clients.Lock()
 	c, ok := h.clients.list[cp.ClientIdentifier]
-	if ok && cp.CleanSession == 0 {
+	if ok && cp.CleanSession {
 		//and if we do, if the clientid is currently connected...
 		if c.Connected() {
 			INFO.Println("Clientid", c.clientID, "already connected, stopping first client")

@@ -2,6 +2,7 @@ package packets
 
 import (
 	"bytes"
+	"code.google.com/p/go-uuid/uuid"
 	"fmt"
 	"io"
 )
@@ -12,6 +13,7 @@ type ConnackPacket struct {
 	FixedHeader
 	TopicNameCompression byte
 	ReturnCode           byte
+	UUID                 uuid.UUID
 }
 
 func (ca *ConnackPacket) String() string {
@@ -20,33 +22,26 @@ func (ca *ConnackPacket) String() string {
 	return str
 }
 
-func (ca *ConnackPacket) Write(w io.Writer) {
+func (ca *ConnackPacket) Write(w io.Writer) error {
 	var body bytes.Buffer
+	var err error
 
 	body.WriteByte(ca.TopicNameCompression)
 	body.WriteByte(ca.ReturnCode)
 	ca.FixedHeader.RemainingLength = 2
 	header := ca.FixedHeader.pack()
 
-	w.Write(header.Bytes())
-	w.Write(body.Bytes())
+	_, err = w.Write(header.Bytes())
+	_, err = w.Write(body.Bytes())
+
+	return err
 }
 
-func (ca *ConnackPacket) Unpack(b *bytes.Buffer) {
-	ca.TopicNameCompression, _ = b.ReadByte()
-	ca.ReturnCode, _ = b.ReadByte()
+func (ca *ConnackPacket) Unpack(b io.Reader) {
+	ca.TopicNameCompression = decodeByte(b)
+	ca.ReturnCode = decodeByte(b)
 }
 
-func (ca *ConnackPacket) MsgID() uint16 {
-	return 0
-}
-
-func (ca *ConnackPacket) SetMsgID(id uint16) {
-}
-
-func (ca *ConnackPacket) PacketType() uint8 {
-	return CONNACK
-}
-func (ca *ConnackPacket) RequiresMsgID() bool {
-	return false
+func (ca *ConnackPacket) Details() Details {
+	return Details{Qos: 0, MessageID: 0}
 }

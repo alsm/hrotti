@@ -1,15 +1,14 @@
 package hrotti
 
 import (
+	"code.google.com/p/go-uuid/uuid"
 	"sync"
 )
 
-type msgID uint32
-
 type messageIDs struct {
 	sync.RWMutex
-	idChan chan uint16
-	index  map[uint16]bool
+	//idChan chan uint16
+	index map[uint16]uuid.UUID
 }
 
 const (
@@ -17,14 +16,14 @@ const (
 	msgIDMin uint16 = 1
 )
 
-func (c *Client) genMsgIDs() {
+/*func (c *Client) genMsgIDs() {
 	defer c.Done()
 	m := &c.messageIDs
 	for {
 		m.Lock()
 		for i := msgIDMin; i < msgIDMax; i++ {
-			if !m.index[i] {
-				m.index[i] = true
+			if m.index[i] == nil {
+				m.index[i] =
 				m.Unlock()
 				select {
 				case m.idChan <- i:
@@ -35,16 +34,28 @@ func (c *Client) genMsgIDs() {
 			}
 		}
 	}
+}*/
+
+func (m *messageIDs) getMsgID(id uuid.UUID) uint16 {
+	m.Lock()
+	defer m.Unlock()
+	for i := msgIDMin; i < msgIDMax; i++ {
+		if m.index[i] == nil {
+			m.index[i] = id
+			return i
+		}
+	}
+	return 0
 }
 
 func (m *messageIDs) inUse(id uint16) bool {
 	m.RLock()
 	defer m.RUnlock()
-	return m.index[id]
+	return m.index[id] != nil
 }
 
 func (m *messageIDs) freeID(id uint16) {
-	defer m.Unlock()
 	m.Lock()
-	m.index[id] = false
+	defer m.Unlock()
+	m.index[id] = nil
 }

@@ -2,11 +2,15 @@ package hrotti
 
 import (
 	"fmt"
+	"math/rand"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
-func Test_NewNode(t *testing.T) {
+/*func Test_NewNode(t *testing.T) {
 	rootNode := NewNode("test")
 
 	if rootNode == nil {
@@ -16,33 +20,35 @@ func Test_NewNode(t *testing.T) {
 	if rootNode.Name != "test" {
 		t.Fatalf("rootNode name is %s, not test", rootNode.Name)
 	}
-}
+}*/
 
 func Test_AddSub(t *testing.T) {
 	rootNode := NewNode("")
-	c := NewClient(nil, "testClientId")
-	sub1 := strings.Split("test/test1/test2/test3", "/")
-	sub2 := strings.Split("test/test1/test4/test5", "/")
-	complete1 := make(chan bool)
-	complete2 := make(chan bool)
-
-	rootNode.AddSub(c, sub1, 1, complete1)
-	<-complete1
-	rootNode.AddSub(c, sub2, 2, complete2)
-	<-complete2
-
-	rootNode.Print("")
-	close(complete1)
-	close(complete2)
+	rand.Seed(time.Now().UnixNano())
+	topics := [7]string{"a", "b", "c", "d", "e", "+", "#"}
+	for i := 0; i < 20; i++ {
+		c := newClient(nil, "testClientId"+strconv.Itoa(i), 100)
+		var sub string
+		r := rand.Intn(7)
+		for j := 0; j <= r; j++ {
+			char := topics[rand.Intn(7)]
+			sub += char
+			if char == "#" || j == r {
+				break
+			}
+			sub += "/"
+		}
+		rootNode.AddSub(c, strings.Split(sub, "/"), 1)
+	}
 }
 
-func Test_DeleteSub(t *testing.T) {
+/*func Test_DeleteSub(t *testing.T) {
 	rootNode := NewNode("")
-	c := NewClient(nil, "testClientId")
+	c := newClient(nil, "testClientId", 100)
 	sub1 := strings.Split("test/test1/test2/test3", "/")
 	sub2 := strings.Split("test/test1/test4/test5", "/")
-	complete1 := make(chan bool)
-	complete2 := make(chan bool)
+	complete1 := make(chan byte)
+	complete2 := make(chan byte)
 	complete3 := make(chan bool)
 
 	rootNode.AddSub(c, sub1, 1, complete1)
@@ -61,31 +67,71 @@ func Test_DeleteSub(t *testing.T) {
 	close(complete3)
 }
 
-func Test_DeliverMessage(t *testing.T) {
-	rootNode := NewNode("")
-	c := NewClient(nil, "testClientId")
-	sub := strings.Split("test/test1/test2/test3", "/")
-	complete := make(chan bool)
+func Test_AddSub2(t *testing.T) {
+	c := newClient(nil, "testClientId", 100)
+	sub1 := "test/test1/test2/test3"
+	sub2 := "test/test1/test4/test5"
 
-	rootNode.AddSub(c, sub, 1, complete)
-	<-complete
+	AddSub2(c, sub1, 1)
+	AddSub2(c, sub2, 2)
+}*/
 
-	msg := New(PUBLISH).(*publishPacket)
-	msg.payload = []byte("Test Message")
-	fmt.Println(msg.String())
-	rootNode.DeliverMessage(strings.Split("test/test1/test2/test3", "/"), msg)
-
-	recvmsg := <-c.outboundMessages
-	if recvmsg == nil {
-		t.Fatalf("failed to receive message")
-	}
-
-	switch recvmsg.(type) {
-	case *publishPacket:
-		pmsg := recvmsg.(*publishPacket)
-		if string(pmsg.payload) != "Test Message" {
-			t.Fatalf("Message payload incorrect: %s", pmsg.payload)
+/*func BenchmarkFindrecip(b *testing.B) {
+	rand.Seed(time.Now().UnixNano())
+	topics := [7]string{"a", "b", "c", "d", "e", "+", "#"}
+	for i := 0; i < b.N; i++ {
+		c := newClient(nil, "testClientId"+strconv.Itoa(i), 100)
+		var sub string
+		r := rand.Intn(7)
+		for j := 0; j <= r; j++ {
+			char := topics[rand.Intn(7)]
+			sub += char
+			if char == "#" || j == r {
+				break
+			}
+			sub += "/"
 		}
-		fmt.Println(pmsg.String())
+		AddSub2(c, sub, 1)
 	}
+	b.ResetTimer()
+	match := FindRecipients2("a/b/c/d/e")
+	fmt.Println("a/b/c/d/e", len(match))
+}*/
+
+func BenchmarkNormalRouter(b *testing.B) {
+	rootNode := NewNode("")
+	rand.Seed(time.Now().UnixNano())
+	topics := [7]string{"a", "b", "c", "d", "e", "+", "#"}
+	for i := 0; i < b.N; i++ {
+		c := newClient(nil, "testClientId"+strconv.Itoa(i), 100)
+		var sub string
+		r := rand.Intn(7)
+		for j := 0; j <= r; j++ {
+			char := topics[rand.Intn(7)]
+			sub += char
+			if char == "#" || j == r {
+				break
+			}
+			sub += "/"
+		}
+		rootNode.AddSub(c, strings.Split(sub, "/"), 1)
+	}
+	var treeWorkers sync.WaitGroup
+	recipients := make(chan *Entry)
+	b.ResetTimer()
+	treeWorkers.Add(1)
+	rootNode.FindRecipients(strings.Split("a/b/c/d/e", "/"), recipients, &treeWorkers)
+	treeWorkers.Wait()
+	close(recipients)
+	for {
+		_, ok := <-recipients
+		if !ok {
+			break
+		}
+	}
+}
+
+func main() {
+	br := testing.Benchmark(BenchmarkNormalRouter)
+	fmt.Println(br)
 }

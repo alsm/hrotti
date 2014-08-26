@@ -1,7 +1,7 @@
 package packets
 
 import (
-	"bytes"
+	"code.google.com/p/go-uuid/uuid"
 	"fmt"
 	"io"
 )
@@ -10,6 +10,7 @@ import (
 
 type DisconnectPacket struct {
 	FixedHeader
+	UUID uuid.UUID
 }
 
 func (d *DisconnectPacket) String() string {
@@ -17,25 +18,16 @@ func (d *DisconnectPacket) String() string {
 	return str
 }
 
-func (d *DisconnectPacket) Write(w io.Writer) {
+func (d *DisconnectPacket) Write(w io.Writer) error {
 	header := d.FixedHeader.pack()
-	w.Write(header.Bytes())
+	_, err := w.Write(header.Bytes())
+
+	return err
 }
 
-func (d *DisconnectPacket) Unpack(b *bytes.Buffer) {
+func (d *DisconnectPacket) Unpack(b io.Reader) {
 }
 
-func (d *DisconnectPacket) MsgID() uint16 {
-	return 0
-}
-
-func (d *DisconnectPacket) SetMsgID(id uint16) {
-}
-
-func (d *DisconnectPacket) PacketType() uint8 {
-	return DISCONNECT
-}
-
-func (d *DisconnectPacket) RequiresMsgID() bool {
-	return false
+func (d *DisconnectPacket) Details() Details {
+	return Details{Qos: 0, MessageID: 0}
 }

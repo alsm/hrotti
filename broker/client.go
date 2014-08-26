@@ -2,10 +2,10 @@ package hrotti
 
 import (
 	//"errors"
+	"code.google.com/p/go-uuid/uuid"
 	. "github.com/alsm/hrotti/packets"
 	//"io"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -20,7 +20,6 @@ type Client struct {
 	messageIDs
 	clientID         string
 	conn             net.Conn
-	rootNode         *Node
 	keepAlive        uint16
 	state            State
 	topicSpace       string
@@ -42,11 +41,10 @@ func newClient(conn net.Conn, clientID string, maxQDepth int) *Client {
 		resetTimer:       make(chan bool, 1),
 		outboundMessages: make(chan *PublishPacket, maxQDepth),
 		outboundPriority: make(chan ControlPacket, maxQDepth),
-		rootNode:         rootNode,
 		stopOnce:         new(sync.Once),
 		messageIDs: messageIDs{
-			idChan: make(chan uint16, 10),
-			index:  make(map[uint16]bool),
+			//idChan: make(chan uint16, 10),
+			index: make(map[uint16]uuid.UUID),
 		},
 	}
 }
@@ -94,6 +92,7 @@ func (c *Client) Stop(sendWill bool, hrotti *Hrotti) {
 	//Its possible that error conditions with the network connection might cause both Send and Receive to
 	//try and call Stop(), but we only want it to be called once, so using the sync.Once in the client we
 	//run the embedded function, later calls with the same sync.Once will simply return.
+	INFO.Println("Stopping client", c.clientID, c.conn.RemoteAddr())
 	if !c.takeOver {
 		c.stopOnce.Do(func() {
 			//close the stop channel, close the network connection, wait for all the goroutines in the waitgroup
@@ -108,7 +107,7 @@ func (c *Client) Stop(sendWill bool, hrotti *Hrotti) {
 			//message, then send it.
 			if sendWill && c.willMessage != nil {
 				INFO.Println("Sending will message for", c.clientID)
-				go c.rootNode.DeliverMessage(strings.Split(c.willMessage.TopicName, "/"), c.willMessage, hrotti)
+				go DeliverMessage(c.willMessage.TopicName, c.willMessage, hrotti)
 			}
 			//if this client connected with cleansession true it means it does not need its state (such as
 			//subscriptions, unreceived messages etc) kept around
@@ -119,7 +118,7 @@ func (c *Client) Stop(sendWill bool, hrotti *Hrotti) {
 				hrotti.clients.Lock()
 				delete(hrotti.clients.list, c.clientID)
 				hrotti.clients.Unlock()
-				c.rootNode.DeleteSubAll(c)
+				//DeleteSubAll(c)
 				hrotti.PersistStore.Close(c)
 			}
 		})
@@ -128,12 +127,10 @@ func (c *Client) Stop(sendWill bool, hrotti *Hrotti) {
 
 func (c *Client) Start(cp *ConnectPacket, hrotti *Hrotti) {
 	//If cleansession was set to 1 in the CONNECT packet set as true in the client.
-	if cp.CleanSession == 1 {
-		c.cleanSession = true
-	}
+	c.cleanSession = cp.CleanSession
 	//There is a will message in the connect packet, so construct the publish packet that will be sent if
 	//the will is triggered.
-	if cp.WillFlag == 1 {
+	if cp.WillFlag {
 		pp := NewControlPacket(PUBLISH).(*PublishPacket)
 		pp.FixedHeader.Qos = cp.WillQos
 		pp.FixedHeader.Retain = cp.WillRetain
@@ -155,9 +152,9 @@ func (c *Client) Start(cp *ConnectPacket, hrotti *Hrotti) {
 		//get any messages still in outbound and attempt to send them.
 		INFO.Println("Getting unacknowledged messages from persistence")
 		for _, msg := range hrotti.PersistStore.GetAll(c) {
-			switch msg.PacketType() {
+			switch msg.(type) {
 			//If the message in the store is a publish packet
-			case PUBLISH:
+			case *PublishPacket:
 				//It's possible we already sent this message and didn't remove it from the store because we
 				//didn't get an acknowledgement, so set the dup flag to 1. (only for QoS > 0)
 				if msg.(*PublishPacket).Qos > 0 {
@@ -177,7 +174,7 @@ func (c *Client) Start(cp *ConnectPacket, hrotti *Hrotti) {
 	ca.Write(c.conn)
 	//getMsgIDs, Receive and Send are part of this WaitGroup, so add 3 to the waitgroup and run the goroutines.
 	c.Add(3)
-	go c.genMsgIDs()
+	//go c.genMsgIDs()
 	go c.Receive(hrotti)
 	go c.Send(hrotti)
 	c.state.SetValue(CONNECTED)
@@ -201,10 +198,6 @@ func (c *Client) ResetTimer() {
 		default:
 		}
 	}
-}
-
-func (c *Client) SetRootNode(node *Node) {
-	c.rootNode = node
 }
 
 func (c *Client) Receive(hrotti *Hrotti) {
@@ -256,22 +249,23 @@ func (c *Client) Receive(hrotti *Hrotti) {
 			//switch on the type of message we've received*/
 			cp, err := ReadPacket(c.conn)
 			if err != nil {
+				ERROR.Println(err.Error(), c.clientID)
 				go c.Stop(true, hrotti)
 				return
 			}
-			switch cp.PacketType() {
+			switch cp.(type) {
 			//a second CONNECT packet is a protocol violation, so Stop (send will) and return.
-			case CONNECT:
+			case *ConnectPacket:
 				ERROR.Println("Received second CONNECT from", c.clientID)
 				go c.Stop(true, hrotti)
 				return
 			//client wishes to disconnect so Stop (don't send will) and return.
-			case DISCONNECT:
+			case *DisconnectPacket:
 				INFO.Println("Received DISCONNECT from", c.clientID)
 				go c.Stop(false, hrotti)
 				return
 			//client has sent us a PUBLISH message, unpack it persist (if QoS > 0) in the inbound store
-			case PUBLISH:
+			case *PublishPacket:
 				pp := cp.(*PublishPacket)
 				PROTOCOL.Println("Received PUBLISH from", c.clientID, pp.TopicName)
 				if pp.Qos > 0 {
@@ -280,10 +274,10 @@ func (c *Client) Receive(hrotti *Hrotti) {
 				//if this message has the retained flag set then set as the retained message for the
 				//appropriate node in the topic tree
 				if pp.Retain {
-					c.rootNode.SetRetained(strings.Split(pp.TopicName, "/"), pp)
+					SetRetained(pp.TopicName, pp)
 				}
 				//go and deliver the message to any subscribers.
-				go c.rootNode.DeliverMessage(strings.Split(pp.TopicName, "/"), pp, hrotti)
+				go DeliverMessage(pp.TopicName, pp, hrotti)
 				//if the message was QoS1 or QoS2 start the acknowledgement flows.
 				switch pp.Qos {
 				case 1:
@@ -296,18 +290,18 @@ func (c *Client) Receive(hrotti *Hrotti) {
 					c.HandleFlow(pr, hrotti)
 				}
 			//We received a PUBACK acknowledging a QoS1 PUBLISH we sent to the client
-			case PUBACK:
+			case *PubackPacket:
 				pa := cp.(*PubackPacket)
 				//Check that we also think this message id is in use, if it is remove the original
 				//PUBLISH from the outbound persistence store and set the message id as free for reuse
 				if c.inUse(pa.MessageID) {
-					hrotti.PersistStore.Delete(c, OUTBOUND, pa.MessageID)
+					hrotti.PersistStore.Delete(c, OUTBOUND, pa.UUID)
 					c.freeID(pa.MessageID)
 				} else {
 					ERROR.Println("Received a PUBACK for unknown msgid", pa.MessageID, "from", c.clientID)
 				}
 			//We received a PUBREC for a QoS2 PUBLISH we sent to the client.
-			case PUBREC:
+			case *PubrecPacket:
 				pr := cp.(*PubrecPacket)
 				//Check that we also think this message id is in use, if it is run the next stage of the
 				//message flows for QoS2 messages.
@@ -321,7 +315,7 @@ func (c *Client) Receive(hrotti *Hrotti) {
 			//We received a PUBREL for a QoS2 PUBLISH from the client, hrotti delivers on PUBLISH though
 			//so we've already sent the original message to any subscribers, so just create a new
 			//PUBCOMP message with the correct message id and pass it to the HandleFlow function.
-			case PUBREL:
+			case *PubrelPacket:
 				pr := cp.(*PubrelPacket)
 				pc := NewControlPacket(PUBCOMP).(*PubcompPacket)
 				pc.MessageID = pr.MessageID
@@ -329,10 +323,10 @@ func (c *Client) Receive(hrotti *Hrotti) {
 			//Received a PUBCOMP for a QoS2 PUBLISH we originally sent the client. Check the messageid is
 			//one we think is in use, if so delete the original PUBLISH from the outbound persistence store
 			//and free the message id for reuse
-			case PUBCOMP:
+			case *PubcompPacket:
 				pc := cp.(*PubcompPacket)
 				if c.inUse(pc.MessageID) {
-					hrotti.PersistStore.Delete(c, OUTBOUND, pc.MessageID)
+					//hrotti.PersistStore.Delete(c, OUTBOUND, pc.UUID)
 					c.freeID(pc.MessageID)
 				} else {
 					ERROR.Println("Received a PUBCOMP for unknown msgid", pc.MessageID, "from", c.clientID)
@@ -340,7 +334,7 @@ func (c *Client) Receive(hrotti *Hrotti) {
 			//The client wishes to make a subscription, unpack the message and call AddSubscription with the
 			//requested topics and QoS'. Create a new SUBACK message and put the granted QoS values in it
 			//and send back to the client.
-			case SUBSCRIBE:
+			case *SubscribePacket:
 				PROTOCOL.Println("Received SUBSCRIBE from", c.clientID)
 				sp := cp.(*SubscribePacket)
 				rQos := c.AddSubscription(sp.Topics, sp.Qoss)
@@ -349,7 +343,7 @@ func (c *Client) Receive(hrotti *Hrotti) {
 				sa.GrantedQoss = append(sa.GrantedQoss, rQos...)
 				c.outboundPriority <- sa
 			//The client wants to unsubscribe from a topic.
-			case UNSUBSCRIBE:
+			case *UnsubscribePacket:
 				PROTOCOL.Println("Received UNSUBSCRIBE from", c.clientID)
 				up := cp.(*UnsubscribePacket)
 				c.RemoveSubscription(up.Topics[0])
@@ -358,7 +352,7 @@ func (c *Client) Receive(hrotti *Hrotti) {
 				c.outboundPriority <- ua
 			//As part of the keepalive if the client doesn't have any messages to send us for as long as the
 			//keepalive period it will send a ping request, so we send a ping response back
-			case PINGREQ:
+			case *PingreqPacket:
 				presp := NewControlPacket(PINGRESP).(*PingrespPacket)
 				c.outboundPriority <- presp
 			}
@@ -367,12 +361,14 @@ func (c *Client) Receive(hrotti *Hrotti) {
 }
 
 func (c *Client) HandleFlow(msg ControlPacket, hrotti *Hrotti) {
-	switch msg.PacketType() {
-	case PUBREL:
+	/*switch msg.(type) {
+	case *PubrelPacket:
 		hrotti.PersistStore.Replace(c, OUTBOUND, msg)
-	case PUBACK, PUBCOMP:
-		hrotti.PersistStore.Delete(c, INBOUND, msg.MsgID())
-	}
+	case *PubackPacket:
+		hrotti.PersistStore.Delete(c, INBOUND, msg.(*PubackPacket).UUID)
+	case *PubcompPacket:
+		hrotti.PersistStore.Delete(c, INBOUND, msg.(*PubcompPacket).UUID)
+	}*/
 	//send to channel if open, silently drop if channel closed
 	select {
 	case c.outboundPriority <- msg:
@@ -397,10 +393,10 @@ func (c *Client) Send(hrotti *Hrotti) {
 				//If there is a durable client subscription the message id assigned will be a value
 				//higher than the normal maximum message id according to the MQTT spec, this means
 				//we need to get a valid MQTT message id before we send the message on.
-				if msg.RequiresMsgID() && msg.MsgID() == 0 {
-					msg.SetMsgID(<-c.idChan)
-					hrotti.PersistStore.Add(c, OUTBOUND, msg)
-				}
+				//if msg.RequiresMsgID() && msg.MsgID() == 0 {
+				//	msg.SetMsgID(<-c.idChan)
+				//	hrotti.PersistStore.Add(c, OUTBOUND, msg)
+				//}
 				msg.Write(c.conn)
 				/*_, err := c.conn.Write(msg.pack())
 				if err != nil {
@@ -411,10 +407,10 @@ func (c *Client) Send(hrotti *Hrotti) {
 			//ok == false means we were triggered because the channel
 			//is closed, and the msg will be nil
 			if ok {
-				if msg.RequiresMsgID() && msg.MsgID() == 0 {
-					msg.SetMsgID(<-c.idChan)
-					hrotti.PersistStore.Add(c, OUTBOUND, msg)
-				}
+				//if msg.RequiresMsgID() && msg.MsgID() == 0 {
+				//	msg.SetMsgID(<-c.idChan)
+				//	hrotti.PersistStore.Add(c, OUTBOUND, msg)
+				//}
 				msg.Write(c.conn)
 				/*_, err := c.conn.Write(msg.pack())
 				if err != nil {

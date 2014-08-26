@@ -1,7 +1,7 @@
 package packets
 
 import (
-	"bytes"
+	"code.google.com/p/go-uuid/uuid"
 	"fmt"
 	"io"
 )
@@ -11,6 +11,7 @@ import (
 type PubcompPacket struct {
 	FixedHeader
 	MessageID uint16
+	UUID      uuid.UUID
 }
 
 func (pc *PubcompPacket) String() string {
@@ -19,29 +20,20 @@ func (pc *PubcompPacket) String() string {
 	return str
 }
 
-func (pc *PubcompPacket) Write(w io.Writer) {
+func (pc *PubcompPacket) Write(w io.Writer) error {
+	var err error
 	pc.FixedHeader.RemainingLength = 2
 	header := pc.FixedHeader.pack()
-	w.Write(header.Bytes())
-	w.Write(encodeUint16(pc.MessageID))
+	_, err = w.Write(header.Bytes())
+	_, err = w.Write(encodeUint16(pc.MessageID))
+
+	return err
 }
 
-func (pc *PubcompPacket) Unpack(b *bytes.Buffer) {
+func (pc *PubcompPacket) Unpack(b io.Reader) {
 	pc.MessageID = decodeUint16(b)
 }
 
-func (pc *PubcompPacket) MsgID() uint16 {
-	return pc.MessageID
-}
-
-func (pc *PubcompPacket) SetMsgID(id uint16) {
-	pc.MessageID = id
-}
-
-func (pc *PubcompPacket) PacketType() uint8 {
-	return PUBCOMP
-}
-
-func (pc *PubcompPacket) RequiresMsgID() bool {
-	return true
+func (pc *PubcompPacket) Details() Details {
+	return Details{Qos: pc.Qos, MessageID: pc.MessageID}
 }

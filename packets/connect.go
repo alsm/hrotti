@@ -2,6 +2,7 @@ package packets
 
 import (
 	"bytes"
+	"code.google.com/p/go-uuid/uuid"
 	"fmt"
 	"io"
 )
@@ -12,12 +13,12 @@ type ConnectPacket struct {
 	FixedHeader
 	ProtocolName    string
 	ProtocolVersion byte
-	CleanSession    byte
-	WillFlag        byte
+	CleanSession    bool
+	WillFlag        bool
 	WillQos         byte
 	WillRetain      bool
-	UsernameFlag    byte
-	PasswordFlag    byte
+	UsernameFlag    bool
+	PasswordFlag    bool
 	ReservedBit     byte
 	KeepaliveTimer  uint16
 
@@ -26,95 +27,91 @@ type ConnectPacket struct {
 	WillMessage      []byte
 	Username         string
 	Password         []byte
+	UUID             uuid.UUID
 }
 
 func (c *ConnectPacket) String() string {
 	str := fmt.Sprintf("%s\n", c.FixedHeader)
-	str += fmt.Sprintf("protocolversion: %d protocolname: %s cleansession: %d willflag: %d WillQos: %d WillRetain: %d Usernameflag: %d Passwordflag: %d keepalivetimer: %d\nclientId: %s\nwilltopic: %s\nwillmessage: %s\nUsername: %s\nPassword: %s\n", c.ProtocolVersion, c.ProtocolName, c.CleanSession, c.WillFlag, c.WillQos, c.WillRetain, c.UsernameFlag, c.PasswordFlag, c.KeepaliveTimer, c.ClientIdentifier, c.WillTopic, c.WillMessage, c.Username, c.Password)
+	str += fmt.Sprintf("protocolversion: %d protocolname: %s cleansession: %b willflag: %b WillQos: %d WillRetain: %b Usernameflag: %b Passwordflag: %b keepalivetimer: %d\nclientId: %s\nwilltopic: %s\nwillmessage: %s\nUsername: %s\nPassword: %s\n", c.ProtocolVersion, c.ProtocolName, c.CleanSession, c.WillFlag, c.WillQos, c.WillRetain, c.UsernameFlag, c.PasswordFlag, c.KeepaliveTimer, c.ClientIdentifier, c.WillTopic, c.WillMessage, c.Username, c.Password)
 	return str
 }
 
-func (c *ConnectPacket) Write(w io.Writer) {
+func (c *ConnectPacket) Write(w io.Writer) error {
 	var header bytes.Buffer
 	var body bytes.Buffer
+	var err error
 
 	body.Write(encodeString(c.ProtocolName))
 	body.WriteByte(c.ProtocolVersion)
-	body.WriteByte(c.CleanSession<<1 | c.WillFlag<<2 | c.WillQos<<3 | boolToByte(c.WillRetain)<<5 | c.PasswordFlag<<6 | c.UsernameFlag<<7)
+	body.WriteByte(boolToByte(c.CleanSession)<<1 | boolToByte(c.WillFlag)<<2 | c.WillQos<<3 | boolToByte(c.WillRetain)<<5 | boolToByte(c.PasswordFlag)<<6 | boolToByte(c.UsernameFlag)<<7)
 	body.Write(encodeUint16(c.KeepaliveTimer))
 	body.Write(encodeString(c.ClientIdentifier))
-	if c.WillFlag == 1 {
+	if c.WillFlag {
 		body.Write(encodeString(c.WillTopic))
 		body.Write(encodeBytes(c.WillMessage))
 	}
-	if c.UsernameFlag == 1 {
+	if c.UsernameFlag {
 		body.Write(encodeString(c.Username))
 	}
-	if c.PasswordFlag == 1 {
+	if c.PasswordFlag {
 		body.Write(encodeBytes(c.Password))
 	}
 	c.FixedHeader.RemainingLength = body.Len()
 	header = c.FixedHeader.pack()
 
-	w.Write(header.Bytes())
-	w.Write(body.Bytes())
+	_, err = w.Write(header.Bytes())
+	_, err = w.Write(body.Bytes())
+
+	return err
 }
 
-func (c *ConnectPacket) Unpack(b *bytes.Buffer) {
+func (c *ConnectPacket) Unpack(b io.Reader) {
 	c.ProtocolName = decodeString(b)
-	c.ProtocolVersion, _ = b.ReadByte()
-	options, _ := b.ReadByte()
+	c.ProtocolVersion = decodeByte(b)
+	options := decodeByte(b)
 	c.ReservedBit = 1 & options
-	c.CleanSession = 1 & (options >> 1)
-	c.WillFlag = 1 & (options >> 2)
+	c.CleanSession = 1&(options>>1) > 0
+	c.WillFlag = 1&(options>>2) > 0
 	c.WillQos = 3 & (options >> 3)
 	c.WillRetain = 1&(options>>5) > 0
-	c.PasswordFlag = 1 & (options >> 6)
-	c.UsernameFlag = 1 & (options >> 7)
+	c.PasswordFlag = 1&(options>>6) > 0
+	c.UsernameFlag = 1&(options>>7) > 0
 	c.KeepaliveTimer = decodeUint16(b)
 	c.ClientIdentifier = decodeString(b)
-	if c.WillFlag == 1 {
+	if c.WillFlag {
 		c.WillTopic = decodeString(b)
 		c.WillMessage = decodeBytes(b)
 	}
-	if c.UsernameFlag == 1 {
+	if c.UsernameFlag {
 		c.Username = decodeString(b)
 	}
-	if c.PasswordFlag == 1 {
+	if c.PasswordFlag {
 		c.Password = decodeBytes(b)
 	}
 }
 
 func (c *ConnectPacket) Validate() byte {
-	if c.PasswordFlag == 1 && c.UsernameFlag != 1 {
+	if c.PasswordFlag && !c.UsernameFlag {
 		return CONN_REF_BAD_USER_PASS
 	}
 	if c.ReservedBit != 0 {
+		fmt.Println("Bad reserved bit")
 		return CONN_PROTOCOL_VIOLATION
 	}
 	if (c.ProtocolName == "MQIsdp" && c.ProtocolVersion != 3) || (c.ProtocolName == "MQTT" && c.ProtocolVersion != 4) {
 		return CONN_REF_BAD_PROTO_VER
 	}
 	if c.ProtocolName != "MQIsdp" && c.ProtocolName != "MQTT" {
+		fmt.Println("Bad protocol name")
 		return CONN_PROTOCOL_VIOLATION
 	}
 	if len(c.ClientIdentifier) > 65535 || len(c.Username) > 65535 || len(c.Password) > 65535 {
+		fmt.Println("Bad size field")
 		return CONN_PROTOCOL_VIOLATION
 	}
 	return CONN_ACCEPTED
 }
 
-func (c *ConnectPacket) MsgID() uint16 {
-	return 0
-}
-
-func (c *ConnectPacket) SetMsgID(id uint16) {
-}
-
-func (c *ConnectPacket) PacketType() uint8 {
-	return CONNECT
-}
-
-func (c *ConnectPacket) RequiresMsgID() bool {
-	return false
+func (c *ConnectPacket) Details() Details {
+	return Details{Qos: 0, MessageID: 0}
 }

@@ -1,6 +1,7 @@
 package hrotti
 
 import (
+	"code.google.com/p/go-uuid/uuid"
 	. "github.com/alsm/hrotti/packets"
 )
 
@@ -18,7 +19,7 @@ type Persistence interface {
 	Add(*Client, dirFlag, ControlPacket) bool
 	Replace(*Client, dirFlag, ControlPacket) bool
 	AddBatch(map[*Client]*PublishPacket)
-	Delete(*Client, dirFlag, uint16) bool
+	Delete(*Client, dirFlag, uuid.UUID) bool
 	GetAll(*Client) []ControlPacket
 	Exists(*Client) bool
 }

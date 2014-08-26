@@ -1,6 +1,7 @@
 package hrotti
 
 import (
+	"code.google.com/p/go-uuid/uuid"
 	. "github.com/alsm/hrotti/packets"
 	"sync"
 )
@@ -50,12 +51,12 @@ func (p *MemoryPersistence) Add(client *Client, direction dirFlag, message Contr
 	p.RLock()
 	defer p.RUnlock()
 	//the msgid is the key in the persistence entry
-	id := message.MsgID()
+	id := uint16(1)
 	switch direction {
 	case INBOUND:
 		p.inbound[client].Lock()
 		defer p.inbound[client].Unlock()
-		DEBUG.Println("Persisting inbound", PacketNames[message.PacketType()], "packet for", client.clientID, id)
+		DEBUG.Println("Persisting inbound packet for", client.clientID, id)
 		//if there is already an entry for this message id return false
 		if _, ok := p.inbound[client].messages[id]; ok {
 			return false
@@ -65,7 +66,7 @@ func (p *MemoryPersistence) Add(client *Client, direction dirFlag, message Contr
 	case OUTBOUND:
 		p.outbound[client].Lock()
 		defer p.outbound[client].Unlock()
-		DEBUG.Println("Persisting outbound", PacketNames[message.PacketType()], "packet for", client.clientID, id)
+		DEBUG.Println("Persisting outbound packet for", client.clientID, id)
 		//if there is already an entry for this message id return false
 		if _, ok := p.outbound[client].messages[id]; ok {
 			return false
@@ -82,14 +83,14 @@ func (p *MemoryPersistence) Replace(client *Client, direction dirFlag, message C
 	p.RLock()
 	defer p.RUnlock()
 
-	id := message.MsgID()
+	id := uint16(1)
 	switch direction {
 	//For QoS2 flows we want to replace the original PUBLISH with the related PUBREL
 	//as it maintains the same message id
 	case INBOUND:
 		p.inbound[client].Lock()
 		defer p.inbound[client].Unlock()
-		DEBUG.Println("Replacing persisted message for", client.clientID, id, "with", PacketNames[message.PacketType()])
+		DEBUG.Println("Replacing persisted message for", client.clientID, id)
 		//if there is already an entry for this message id return false
 		if _, ok := p.inbound[client].messages[id]; ok {
 			return false
@@ -99,7 +100,7 @@ func (p *MemoryPersistence) Replace(client *Client, direction dirFlag, message C
 	case OUTBOUND:
 		p.outbound[client].Lock()
 		defer p.outbound[client].Unlock()
-		DEBUG.Println("Replacing persisted message for", client.clientID, id, "with", PacketNames[message.PacketType()])
+		DEBUG.Println("Replacing persisted message for", client.clientID, id)
 		//if there is already an entry for this message id return false
 		if _, ok := p.outbound[client].messages[id]; ok {
 			return false
@@ -122,11 +123,12 @@ func (p *MemoryPersistence) AddBatch(batch map[*Client]*PublishPacket) {
 	}
 }
 
-func (p *MemoryPersistence) Delete(client *Client, direction dirFlag, id uint16) bool {
+func (p *MemoryPersistence) Delete(client *Client, direction dirFlag, uid uuid.UUID) bool {
 	//only need to get a read lock on the persistence store, but lock the underlying
 	//persistenceentry for the client we're working with.
 	p.RLock()
 	defer p.RUnlock()
+	id := uint16(1)
 	//checks that there is actually an entry for the message id we're being asked to
 	//delete, if there isn't return false, otherwise delete the entry.
 	DEBUG.Println("Removing persisted message for", client.clientID)

@@ -2,6 +2,7 @@ package packets
 
 import (
 	"bytes"
+	"code.google.com/p/go-uuid/uuid"
 	"fmt"
 	"io"
 )
@@ -12,6 +13,7 @@ type UnsubscribePacket struct {
 	FixedHeader
 	MessageID uint16
 	Topics    []string
+	UUID      uuid.UUID
 }
 
 func (u *UnsubscribePacket) String() string {
@@ -20,8 +22,9 @@ func (u *UnsubscribePacket) String() string {
 	return str
 }
 
-func (u *UnsubscribePacket) Write(w io.Writer) {
+func (u *UnsubscribePacket) Write(w io.Writer) error {
 	var body bytes.Buffer
+	var err error
 	body.Write(encodeUint16(u.MessageID))
 	for _, topic := range u.Topics {
 		body.Write(encodeString(topic))
@@ -29,11 +32,13 @@ func (u *UnsubscribePacket) Write(w io.Writer) {
 	u.FixedHeader.RemainingLength = body.Len()
 	header := u.FixedHeader.pack()
 
-	w.Write(header.Bytes())
-	w.Write(body.Bytes())
+	_, err = w.Write(header.Bytes())
+	_, err = w.Write(body.Bytes())
+
+	return err
 }
 
-func (u *UnsubscribePacket) Unpack(b *bytes.Buffer) {
+func (u *UnsubscribePacket) Unpack(b io.Reader) {
 	u.MessageID = decodeUint16(b)
 	var topic string
 	for topic = decodeString(b); topic != ""; topic = decodeString(b) {
@@ -41,18 +46,6 @@ func (u *UnsubscribePacket) Unpack(b *bytes.Buffer) {
 	}
 }
 
-func (u *UnsubscribePacket) MsgID() uint16 {
-	return u.MessageID
-}
-
-func (u *UnsubscribePacket) SetMsgID(id uint16) {
-	u.MessageID = id
-}
-
-func (u *UnsubscribePacket) PacketType() uint8 {
-	return UNSUBSCRIBE
-}
-
-func (u *UnsubscribePacket) RequiresMsgID() bool {
-	return true
+func (u *UnsubscribePacket) Details() Details {
+	return Details{Qos: 1, MessageID: u.MessageID}
 }

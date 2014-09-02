@@ -69,6 +69,7 @@ var ConnackReturnCodes = map[uint8]string{
 	3:   "Connection Refused: Server Unavailable",
 	4:   "Connection Refused: Username or Password in unknown format",
 	5:   "Connection Refused: Not Authorised",
+	254: "Connection Error",
 	255: "Connection Refused: Protocol Violation",
 }
 

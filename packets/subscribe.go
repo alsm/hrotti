@@ -33,10 +33,9 @@ func (s *SubscribePacket) Write(w io.Writer) error {
 		body.WriteByte(s.Qoss[i])
 	}
 	s.FixedHeader.RemainingLength = body.Len()
-	header := s.FixedHeader.pack()
-
-	_, err = w.Write(header.Bytes())
-	_, err = w.Write(body.Bytes())
+	packet := s.FixedHeader.pack()
+	packet.Write(body.Bytes())
+	_, err = packet.WriteTo(w)
 
 	return err
 }

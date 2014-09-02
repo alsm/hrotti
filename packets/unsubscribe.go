@@ -30,10 +30,9 @@ func (u *UnsubscribePacket) Write(w io.Writer) error {
 		body.Write(encodeString(topic))
 	}
 	u.FixedHeader.RemainingLength = body.Len()
-	header := u.FixedHeader.pack()
-
-	_, err = w.Write(header.Bytes())
-	_, err = w.Write(body.Bytes())
+	packet := u.FixedHeader.pack()
+	packet.Write(body.Bytes())
+	_, err = packet.WriteTo(w)
 
 	return err
 }

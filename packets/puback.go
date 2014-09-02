@@ -23,9 +23,9 @@ func (pa *PubackPacket) String() string {
 func (pa *PubackPacket) Write(w io.Writer) error {
 	var err error
 	pa.FixedHeader.RemainingLength = 2
-	header := pa.FixedHeader.pack()
-	_, err = w.Write(header.Bytes())
-	_, err = w.Write(encodeUint16(pa.MessageID))
+	packet := pa.FixedHeader.pack()
+	packet.Write(encodeUint16(pa.MessageID))
+	_, err = packet.WriteTo(w)
 
 	return err
 }

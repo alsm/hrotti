@@ -37,7 +37,6 @@ func (c *ConnectPacket) String() string {
 }
 
 func (c *ConnectPacket) Write(w io.Writer) error {
-	var header bytes.Buffer
 	var body bytes.Buffer
 	var err error
 
@@ -57,10 +56,9 @@ func (c *ConnectPacket) Write(w io.Writer) error {
 		body.Write(encodeBytes(c.Password))
 	}
 	c.FixedHeader.RemainingLength = body.Len()
-	header = c.FixedHeader.pack()
-
-	_, err = w.Write(header.Bytes())
-	_, err = w.Write(body.Bytes())
+	packet := c.FixedHeader.pack()
+	packet.Write(body.Bytes())
+	_, err = packet.WriteTo(w)
 
 	return err
 }

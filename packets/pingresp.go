@@ -19,8 +19,8 @@ func (pr *PingrespPacket) String() string {
 }
 
 func (pr *PingrespPacket) Write(w io.Writer) error {
-	header := pr.FixedHeader.pack()
-	_, err := w.Write(header.Bytes())
+	packet := pr.FixedHeader.pack()
+	_, err := packet.WriteTo(w)
 
 	return err
 }

@@ -28,10 +28,9 @@ func (sa *SubackPacket) Write(w io.Writer) error {
 	body.Write(encodeUint16(sa.MessageID))
 	body.Write(sa.GrantedQoss)
 	sa.FixedHeader.RemainingLength = body.Len()
-	header := sa.FixedHeader.pack()
-
-	_, err = w.Write(header.Bytes())
-	_, err = w.Write(body.Bytes())
+	packet := sa.FixedHeader.pack()
+	packet.Write(body.Bytes())
+	_, err = packet.WriteTo(w)
 
 	return err
 }

@@ -36,7 +36,10 @@ func (sa *SubackPacket) Write(w io.Writer) error {
 }
 
 func (sa *SubackPacket) Unpack(b io.Reader) {
+	var qosBuffer bytes.Buffer
 	sa.MessageID = decodeUint16(b)
+	qosBuffer.ReadFrom(b)
+	sa.GrantedQoss = qosBuffer.Bytes()
 }
 
 func (sa *SubackPacket) Details() Details {

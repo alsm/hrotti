@@ -11,7 +11,7 @@ import (
 type PubackPacket struct {
 	FixedHeader
 	MessageID uint16
-	UUID      uuid.UUID
+	uuid      uuid.UUID
 }
 
 func (pa *PubackPacket) String() string {
@@ -36,4 +36,8 @@ func (pa *PubackPacket) Unpack(b io.Reader) {
 
 func (pa *PubackPacket) Details() Details {
 	return Details{Qos: pa.Qos, MessageID: pa.MessageID}
+}
+
+func (pa *PubackPacket) UUID() uuid.UUID {
+	return pa.uuid
 }

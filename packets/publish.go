@@ -14,7 +14,7 @@ type PublishPacket struct {
 	TopicName string
 	MessageID uint16
 	Payload   []byte
-	UUID      uuid.UUID
+	uuid      uuid.UUID
 }
 
 func (p *PublishPacket) String() string {
@@ -36,7 +36,7 @@ func (p *PublishPacket) Write(w io.Writer) error {
 	packet := p.FixedHeader.pack()
 	packet.Write(body.Bytes())
 	packet.Write(p.Payload)
-	_, err = packet.WriteTo(w)
+	_, err = w.Write(packet.Bytes())
 
 	return err
 }
@@ -64,4 +64,8 @@ func (p *PublishPacket) Copy() *PublishPacket {
 
 func (p *PublishPacket) Details() Details {
 	return Details{Qos: p.Qos, MessageID: p.MessageID}
+}
+
+func (p *PublishPacket) UUID() uuid.UUID {
+	return p.uuid
 }

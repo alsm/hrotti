@@ -10,7 +10,7 @@ import (
 
 type PingreqPacket struct {
 	FixedHeader
-	UUID uuid.UUID
+	uuid uuid.UUID
 }
 
 func (pr *PingreqPacket) String() string {
@@ -30,4 +30,8 @@ func (pr *PingreqPacket) Unpack(b io.Reader) {
 
 func (pr *PingreqPacket) Details() Details {
 	return Details{Qos: 0, MessageID: 0}
+}
+
+func (pr *PingreqPacket) UUID() uuid.UUID {
+	return pr.uuid
 }

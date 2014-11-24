@@ -14,12 +14,12 @@ const (
 
 type Persistence interface {
 	Init() error
-	Open(*Client)
-	Close(*Client)
-	Add(*Client, dirFlag, ControlPacket) bool
-	Replace(*Client, dirFlag, ControlPacket) bool
-	AddBatch(map[*Client]*PublishPacket)
-	Delete(*Client, dirFlag, uuid.UUID) bool
-	GetAll(*Client) []ControlPacket
-	Exists(*Client) bool
+	Open(string)
+	Close(string)
+	Add(string, dirFlag, ControlPacket) bool
+	Replace(string, dirFlag, ControlPacket) bool
+	AddBatch(map[string]*PublishPacket)
+	Delete(string, dirFlag, uuid.UUID) bool
+	GetAll(string) []ControlPacket
+	Exists(string) bool
 }

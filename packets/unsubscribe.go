@@ -13,7 +13,7 @@ type UnsubscribePacket struct {
 	FixedHeader
 	MessageID uint16
 	Topics    []string
-	UUID      uuid.UUID
+	uuid      uuid.UUID
 }
 
 func (u *UnsubscribePacket) String() string {
@@ -47,4 +47,8 @@ func (u *UnsubscribePacket) Unpack(b io.Reader) {
 
 func (u *UnsubscribePacket) Details() Details {
 	return Details{Qos: 1, MessageID: u.MessageID}
+}
+
+func (u *UnsubscribePacket) UUID() uuid.UUID {
+	return u.uuid
 }

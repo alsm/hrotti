@@ -13,7 +13,7 @@ type SubackPacket struct {
 	FixedHeader
 	MessageID   uint16
 	GrantedQoss []byte
-	UUID        uuid.UUID
+	uuid        uuid.UUID
 }
 
 func (sa *SubackPacket) String() string {
@@ -44,4 +44,8 @@ func (sa *SubackPacket) Unpack(b io.Reader) {
 
 func (sa *SubackPacket) Details() Details {
 	return Details{Qos: 0, MessageID: sa.MessageID}
+}
+
+func (sa *SubackPacket) UUID() uuid.UUID {
+	return sa.uuid
 }

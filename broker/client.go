@@ -81,11 +81,14 @@ func (c *Client) StopForTakeover() {
 	//close the stop channel, close the network connection, wait for all the goroutines in the waitgroup to
 	//finish, set the conn and bufferedconn to nil
 	c.takeOver = true
-	close(c.stop)
-	c.conn.Close()
-	c.Wait()
-	c.conn = nil
-	c.takeOver = false
+	c.stopOnce.Do(func() {
+		INFO.Println("Closing Stop chan")
+		close(c.stop)
+		INFO.Println("Closing connection")
+		c.conn.Close()
+		c.Wait()
+		c.conn = nil
+	})
 }
 
 func (c *Client) Stop(sendWill bool, hrotti *Hrotti) {
@@ -107,7 +110,7 @@ func (c *Client) Stop(sendWill bool, hrotti *Hrotti) {
 			//message, then send it.
 			if sendWill && c.willMessage != nil {
 				INFO.Println("Sending will message for", c.clientID)
-				go DeliverMessage(c.willMessage.TopicName, c.willMessage, hrotti)
+				go hrotti.DeliverMessage(c.willMessage.TopicName, c.willMessage)
 			}
 			//if this client connected with cleansession true it means it does not need its state (such as
 			//subscriptions, unreceived messages etc) kept around
@@ -118,8 +121,8 @@ func (c *Client) Stop(sendWill bool, hrotti *Hrotti) {
 				hrotti.clients.Lock()
 				delete(hrotti.clients.list, c.clientID)
 				hrotti.clients.Unlock()
-				//DeleteSubAll(c)
-				hrotti.PersistStore.Close(c)
+				hrotti.DeleteSubAll(c.clientID)
+				hrotti.PersistStore.Close(c.clientID)
 			}
 		})
 	}
@@ -145,13 +148,13 @@ func (c *Client) Start(cp *ConnectPacket, hrotti *Hrotti) {
 
 	//If cleansession true, or there doesn't already exist a persistence store for this client (ie a new
 	//durable client), create the inbound and outbound persistence stores.
-	if c.cleanSession || !hrotti.PersistStore.Exists(c) {
-		hrotti.PersistStore.Open(c)
+	if c.cleanSession || !hrotti.PersistStore.Exists(c.clientID) {
+		hrotti.PersistStore.Open(c.clientID)
 	} else {
 		//we have an existing inbound and outbound persistence store for this client already, so lets
 		//get any messages still in outbound and attempt to send them.
 		INFO.Println("Getting unacknowledged messages from persistence")
-		for _, msg := range hrotti.PersistStore.GetAll(c) {
+		for _, msg := range hrotti.PersistStore.GetAll(c.clientID) {
 			switch msg.(type) {
 			//If the message in the store is a publish packet
 			case *PublishPacket:
@@ -172,9 +175,8 @@ func (c *Client) Start(cp *ConnectPacket, hrotti *Hrotti) {
 	ca := NewControlPacket(CONNACK).(*ConnackPacket)
 	ca.ReturnCode = CONN_ACCEPTED
 	ca.Write(c.conn)
-	//getMsgIDs, Receive and Send are part of this WaitGroup, so add 3 to the waitgroup and run the goroutines.
-	c.Add(3)
-	//go c.genMsgIDs()
+	//Receive and Send are part of this WaitGroup, so add 2 to the waitgroup and run the goroutines.
+	c.Add(2)
 	go c.Receive(hrotti)
 	go c.Send(hrotti)
 	c.state.SetValue(CONNECTED)
@@ -269,15 +271,15 @@ func (c *Client) Receive(hrotti *Hrotti) {
 				pp := cp.(*PublishPacket)
 				PROTOCOL.Println("Received PUBLISH from", c.clientID, pp.TopicName)
 				if pp.Qos > 0 {
-					hrotti.PersistStore.Add(c, INBOUND, pp)
+					hrotti.PersistStore.Add(c.clientID, INBOUND, pp)
 				}
 				//if this message has the retained flag set then set as the retained message for the
 				//appropriate node in the topic tree
 				if pp.Retain {
-					SetRetained(pp.TopicName, pp)
+					hrotti.subs.SetRetained(pp.TopicName, pp)
 				}
 				//go and deliver the message to any subscribers.
-				go DeliverMessage(pp.TopicName, pp, hrotti)
+				go hrotti.DeliverMessage(pp.TopicName, pp)
 				//if the message was QoS1 or QoS2 start the acknowledgement flows.
 				switch pp.Qos {
 				case 1:
@@ -295,7 +297,7 @@ func (c *Client) Receive(hrotti *Hrotti) {
 				//Check that we also think this message id is in use, if it is remove the original
 				//PUBLISH from the outbound persistence store and set the message id as free for reuse
 				if c.inUse(pa.MessageID) {
-					hrotti.PersistStore.Delete(c, OUTBOUND, pa.UUID)
+					hrotti.PersistStore.Delete(c.clientID, OUTBOUND, pa.UUID())
 					c.freeID(pa.MessageID)
 				} else {
 					ERROR.Println("Received a PUBACK for unknown msgid", pa.MessageID, "from", c.clientID)
@@ -337,7 +339,7 @@ func (c *Client) Receive(hrotti *Hrotti) {
 			case *SubscribePacket:
 				PROTOCOL.Println("Received SUBSCRIBE from", c.clientID)
 				sp := cp.(*SubscribePacket)
-				rQos := c.AddSubscription(sp.Topics, sp.Qoss)
+				rQos := hrotti.AddSubscription(c, sp.Topics, sp.Qoss)
 				sa := NewControlPacket(SUBACK).(*SubackPacket)
 				sa.MessageID = sp.MessageID
 				sa.GrantedQoss = append(sa.GrantedQoss, rQos...)
@@ -346,7 +348,7 @@ func (c *Client) Receive(hrotti *Hrotti) {
 			case *UnsubscribePacket:
 				PROTOCOL.Println("Received UNSUBSCRIBE from", c.clientID)
 				up := cp.(*UnsubscribePacket)
-				c.RemoveSubscription(up.Topics[0])
+				hrotti.RemoveSubscription(c, up.Topics[0])
 				ua := NewControlPacket(UNSUBACK).(*UnsubackPacket)
 				ua.MessageID = up.MessageID
 				c.outboundPriority <- ua
@@ -361,14 +363,12 @@ func (c *Client) Receive(hrotti *Hrotti) {
 }
 
 func (c *Client) HandleFlow(msg ControlPacket, hrotti *Hrotti) {
-	/*switch msg.(type) {
+	switch msg.(type) {
 	case *PubrelPacket:
-		hrotti.PersistStore.Replace(c, OUTBOUND, msg)
-	case *PubackPacket:
-		hrotti.PersistStore.Delete(c, INBOUND, msg.(*PubackPacket).UUID)
-	case *PubcompPacket:
-		hrotti.PersistStore.Delete(c, INBOUND, msg.(*PubcompPacket).UUID)
-	}*/
+		hrotti.PersistStore.Replace(c.clientID, OUTBOUND, msg)
+	case *PubackPacket, *PubcompPacket:
+		hrotti.PersistStore.Delete(c.clientID, INBOUND, msg.UUID())
+	}
 	//send to channel if open, silently drop if channel closed
 	select {
 	case c.outboundPriority <- msg:
@@ -390,32 +390,24 @@ func (c *Client) Send(hrotti *Hrotti) {
 		//type. ok == false means the channel is closed and the msg will be nil
 		case msg, ok := <-c.outboundPriority:
 			if ok {
-				//If there is a durable client subscription the message id assigned will be a value
-				//higher than the normal maximum message id according to the MQTT spec, this means
-				//we need to get a valid MQTT message id before we send the message on.
-				//if msg.RequiresMsgID() && msg.MsgID() == 0 {
-				//	msg.SetMsgID(<-c.idChan)
-				//	hrotti.PersistStore.Add(c, OUTBOUND, msg)
-				//}
+				//Message IDs are not assigned until we're ready to send the message
+				switch msg.(type) {
+				case *SubscribePacket:
+					msg.(*SubscribePacket).MessageID = c.getMsgID(msg.UUID())
+				case *UnsubscribePacket:
+					msg.(*UnsubscribePacket).MessageID = c.getMsgID(msg.UUID())
+				}
 				msg.Write(c.conn)
-				/*_, err := c.conn.Write(msg.pack())
-				if err != nil {
-					ERROR.Println("Error writing msg")
-				}*/
 			}
 		case msg, ok := <-c.outboundMessages:
 			//ok == false means we were triggered because the channel
 			//is closed, and the msg will be nil
 			if ok {
-				//if msg.RequiresMsgID() && msg.MsgID() == 0 {
-				//	msg.SetMsgID(<-c.idChan)
-				//	hrotti.PersistStore.Add(c, OUTBOUND, msg)
-				//}
+				switch msg.Details().Qos {
+				case 1, 2:
+					msg.MessageID = c.getMsgID(msg.UUID())
+				}
 				msg.Write(c.conn)
-				/*_, err := c.conn.Write(msg.pack())
-				if err != nil {
-					ERROR.Println("Error writing msg")
-				}*/
 			}
 		}
 	}

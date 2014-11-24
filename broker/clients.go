@@ -11,8 +11,8 @@ type clients struct {
 }
 
 // Return empty Clients (value type)
-func newClients() clients {
-	c := clients{
+func newClients() *clients {
+	c := &clients{
 		sync.RWMutex{},
 		make(map[string]*Client),
 	}

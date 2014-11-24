@@ -17,7 +17,8 @@ type Hrotti struct {
 	listeners          map[string]*internalListener
 	listenersWaitGroup sync.WaitGroup
 	maxQueueDepth      int
-	clients            clients
+	clients            *clients
+	subs               *subscriptionMap
 }
 
 type internalListener struct {
@@ -33,11 +34,18 @@ func NewHrotti(maxQueueDepth int, persistence Persistence) *Hrotti {
 		listeners:     make(map[string]*internalListener),
 		maxQueueDepth: maxQueueDepth,
 		clients:       newClients(),
+		subs:          newSubMap(),
 	}
 	//start the goroutine that generates internal message ids for when clients receive messages
 	//but are not connected.
 	h.PersistStore.Init()
 	return h
+}
+
+func (h *Hrotti) getClient(id string) *Client {
+	h.clients.RLock()
+	defer h.clients.RUnlock()
+	return h.clients.list[id]
 }
 
 func (h *Hrotti) AddListener(name string, config *ListenerConfig) error {

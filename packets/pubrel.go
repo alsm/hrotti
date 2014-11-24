@@ -11,7 +11,7 @@ import (
 type PubrelPacket struct {
 	FixedHeader
 	MessageID uint16
-	UUID      uuid.UUID
+	uuid      uuid.UUID
 }
 
 func (pr *PubrelPacket) String() string {
@@ -36,4 +36,8 @@ func (pr *PubrelPacket) Unpack(b io.Reader) {
 
 func (pr *PubrelPacket) Details() Details {
 	return Details{Qos: pr.Qos, MessageID: pr.MessageID}
+}
+
+func (pr *PubrelPacket) UUID() uuid.UUID {
+	return pr.uuid
 }

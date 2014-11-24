@@ -11,7 +11,7 @@ import (
 type UnsubackPacket struct {
 	FixedHeader
 	MessageID uint16
-	UUID      uuid.UUID
+	uuid      uuid.UUID
 }
 
 func (ua *UnsubackPacket) String() string {
@@ -36,4 +36,8 @@ func (ua *UnsubackPacket) Unpack(b io.Reader) {
 
 func (ua *UnsubackPacket) Details() Details {
 	return Details{Qos: 0, MessageID: ua.MessageID}
+}
+
+func (ua *UnsubackPacket) UUID() uuid.UUID {
+	return ua.uuid
 }

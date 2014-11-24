@@ -9,35 +9,35 @@ import (
 //a persistence entry is a map of msgIds and ControlPackets
 type MemoryPersistenceEntry struct {
 	sync.Mutex
-	messages map[uint16]ControlPacket
+	messages map[string]ControlPacket
 }
 
 //the MemoryPersistence struct is a map of client pointers to pointers
 //to a Persistence Entry. So each client has its own map of msgIds/packets.
 type MemoryPersistence struct {
 	sync.RWMutex
-	inbound  map[*Client]*MemoryPersistenceEntry
-	outbound map[*Client]*MemoryPersistenceEntry
+	inbound  map[string]*MemoryPersistenceEntry
+	outbound map[string]*MemoryPersistenceEntry
 }
 
 func (p *MemoryPersistence) Init() error {
 	//init the Memory persistence, we haven't created our persistenceentrys yet
-	p.inbound = make(map[*Client]*MemoryPersistenceEntry)
-	p.outbound = make(map[*Client]*MemoryPersistenceEntry)
+	p.inbound = make(map[string]*MemoryPersistenceEntry)
+	p.outbound = make(map[string]*MemoryPersistenceEntry)
 	return nil
 }
 
-func (p *MemoryPersistence) Open(client *Client) {
+func (p *MemoryPersistence) Open(client string) {
 	//lock the whole persistence store while we add a new client entry
 	p.Lock()
 	defer p.Unlock()
-	DEBUG.Println("Opening memory persistence for", client.clientID)
+	DEBUG.Println("Opening memory persistence for", client)
 	//init the MemoryPersistenceEntry for this client
-	p.inbound[client] = &MemoryPersistenceEntry{messages: make(map[uint16]ControlPacket)}
-	p.outbound[client] = &MemoryPersistenceEntry{messages: make(map[uint16]ControlPacket)}
+	p.inbound[client] = &MemoryPersistenceEntry{messages: make(map[string]ControlPacket)}
+	p.outbound[client] = &MemoryPersistenceEntry{messages: make(map[string]ControlPacket)}
 }
 
-func (p *MemoryPersistence) Close(client *Client) {
+func (p *MemoryPersistence) Close(client string) {
 	//lock the whole persistence store while we delete a client from the map
 	p.Lock()
 	defer p.Unlock()
@@ -45,18 +45,18 @@ func (p *MemoryPersistence) Close(client *Client) {
 	delete(p.outbound, client)
 }
 
-func (p *MemoryPersistence) Add(client *Client, direction dirFlag, message ControlPacket) bool {
+func (p *MemoryPersistence) Add(client string, direction dirFlag, message ControlPacket) bool {
 	//only need to get a read lock on the persistence store, but lock the underlying
 	//persistenceentry for the client we're working with.
 	p.RLock()
 	defer p.RUnlock()
-	//the msgid is the key in the persistence entry
-	id := uint16(1)
+	//the uuid is the key in the persistence entry
+	id := message.UUID().String()
 	switch direction {
 	case INBOUND:
 		p.inbound[client].Lock()
 		defer p.inbound[client].Unlock()
-		DEBUG.Println("Persisting inbound packet for", client.clientID, id)
+		DEBUG.Println("Persisting inbound packet for", client, id)
 		//if there is already an entry for this message id return false
 		if _, ok := p.inbound[client].messages[id]; ok {
 			return false
@@ -66,7 +66,7 @@ func (p *MemoryPersistence) Add(client *Client, direction dirFlag, message Contr
 	case OUTBOUND:
 		p.outbound[client].Lock()
 		defer p.outbound[client].Unlock()
-		DEBUG.Println("Persisting outbound packet for", client.clientID, id)
+		DEBUG.Println("Persisting outbound packet for", client, id)
 		//if there is already an entry for this message id return false
 		if _, ok := p.outbound[client].messages[id]; ok {
 			return false
@@ -77,20 +77,20 @@ func (p *MemoryPersistence) Add(client *Client, direction dirFlag, message Contr
 	return true
 }
 
-func (p *MemoryPersistence) Replace(client *Client, direction dirFlag, message ControlPacket) bool {
+func (p *MemoryPersistence) Replace(client string, direction dirFlag, message ControlPacket) bool {
 	//only need to get a read lock on the persistence store, but lock the underlying
 	//persistenceentry for the client we're working with.
 	p.RLock()
 	defer p.RUnlock()
 
-	id := uint16(1)
+	id := message.UUID().String()
 	switch direction {
 	//For QoS2 flows we want to replace the original PUBLISH with the related PUBREL
 	//as it maintains the same message id
 	case INBOUND:
 		p.inbound[client].Lock()
 		defer p.inbound[client].Unlock()
-		DEBUG.Println("Replacing persisted message for", client.clientID, id)
+		DEBUG.Println("Replacing persisted message for", client, id)
 		//if there is already an entry for this message id return false
 		if _, ok := p.inbound[client].messages[id]; ok {
 			return false
@@ -100,7 +100,7 @@ func (p *MemoryPersistence) Replace(client *Client, direction dirFlag, message C
 	case OUTBOUND:
 		p.outbound[client].Lock()
 		defer p.outbound[client].Unlock()
-		DEBUG.Println("Replacing persisted message for", client.clientID, id)
+		DEBUG.Println("Replacing persisted message for", client, id)
 		//if there is already an entry for this message id return false
 		if _, ok := p.outbound[client].messages[id]; ok {
 			return false
@@ -111,7 +111,7 @@ func (p *MemoryPersistence) Replace(client *Client, direction dirFlag, message C
 	return true
 }
 
-func (p *MemoryPersistence) AddBatch(batch map[*Client]*PublishPacket) {
+func (p *MemoryPersistence) AddBatch(batch map[string]*PublishPacket) {
 	//adding messages to many different client entries at the same time, as we're doing
 	//this grabbing a full lock on the whole persistence mechanism
 	p.Lock()
@@ -119,19 +119,19 @@ func (p *MemoryPersistence) AddBatch(batch map[*Client]*PublishPacket) {
 	//the batch is a map keyed by client and value is a pointer to a PUBLISH
 	//for each create an appropriate entry
 	for client, message := range batch {
-		p.inbound[client].messages[message.MessageID] = message
+		p.inbound[client].messages[message.UUID().String()] = message
 	}
 }
 
-func (p *MemoryPersistence) Delete(client *Client, direction dirFlag, uid uuid.UUID) bool {
+func (p *MemoryPersistence) Delete(client string, direction dirFlag, uid uuid.UUID) bool {
 	//only need to get a read lock on the persistence store, but lock the underlying
 	//persistenceentry for the client we're working with.
 	p.RLock()
 	defer p.RUnlock()
-	id := uint16(1)
 	//checks that there is actually an entry for the message id we're being asked to
 	//delete, if there isn't return false, otherwise delete the entry.
-	DEBUG.Println("Removing persisted message for", client.clientID)
+	id := uid.String()
+	DEBUG.Println("Removing persisted message for", client)
 	switch direction {
 	case INBOUND:
 		p.inbound[client].Lock()
@@ -153,7 +153,7 @@ func (p *MemoryPersistence) Delete(client *Client, direction dirFlag, uid uuid.U
 	return true
 }
 
-func (p *MemoryPersistence) GetAll(client *Client) (messages []ControlPacket) {
+func (p *MemoryPersistence) GetAll(client string) (messages []ControlPacket) {
 	//only need to get a read lock on the persistence store, but lock the underlying
 	//persistenceentry for the client we're working with.
 	p.RLock()
@@ -168,7 +168,7 @@ func (p *MemoryPersistence) GetAll(client *Client) (messages []ControlPacket) {
 	return messages
 }
 
-func (p *MemoryPersistence) Exists(client *Client) bool {
+func (p *MemoryPersistence) Exists(client string) bool {
 	//grab a read lock on the persistence and check if there is already an entry
 	//for this client.
 	p.RLock()

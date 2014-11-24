@@ -6,84 +6,160 @@ import (
 	"sync"
 )
 
-type retainedMap struct {
-	sync.RWMutex
-	retainedMessages map[string]*PublishPacket
-}
-
 type subscriptionMap struct {
 	subElements map[string][]string
-	subMap      map[string]map[*Client]byte
+	subMap      map[string]map[string]byte
 	subBitmap   []map[string]map[string]bool
-	retained    retainedMap
+	retained    map[string]*PublishPacket
 	sync.RWMutex
 }
 
 var subs subscriptionMap
 
-func init() {
-	subs.subElements = make(map[string][]string)
-	subs.subMap = make(map[string]map[*Client]byte)
-	subs.subBitmap = make([]map[string]map[string]bool, 10)
-	for i, _ := range subs.subBitmap {
-		subs.subBitmap[i] = make(map[string]map[string]bool)
+func newSubMap() *subscriptionMap {
+	s := &subscriptionMap{}
+	s.subElements = make(map[string][]string)
+	s.subMap = make(map[string]map[string]byte)
+	s.subBitmap = make([]map[string]map[string]bool, 10)
+	for i, _ := range s.subBitmap {
+		s.subBitmap[i] = make(map[string]map[string]bool)
 	}
-	subs.retained.retainedMessages = make(map[string]*PublishPacket)
+	s.retained = make(map[string]*PublishPacket)
+
+	return s
 }
 
-func SetRetained(topic string, message *PublishPacket) {
-	subs.retained.Lock()
-	defer subs.retained.RUnlock()
+func (s *subscriptionMap) SetRetained(topic string, message *PublishPacket) {
+	DEBUG.Println("Setting retained message for", topic)
+	s.RLock()
+	defer s.RUnlock()
 	if len(message.Payload) == 0 {
-		delete(subs.retained.retainedMessages, topic)
+		delete(s.retained, topic)
 	} else {
-		subs.retained.retainedMessages[topic] = message
+		s.retained[topic] = message
 	}
 }
 
-func AddSub(client *Client, subscription string, qos byte) {
-	subs.Lock()
-	defer subs.Unlock()
-	if _, ok := subs.subElements[subscription]; !ok {
-		subs.subElements[subscription] = strings.Split(subscription, "/")
-	}
-	if _, ok := subs.subMap[subscription]; !ok {
-		subs.subMap[subscription] = make(map[*Client]byte)
-	}
-	subs.subMap[subscription][client] = qos
-	for i, element := range append(subs.subElements[subscription], "\u0000") {
-		if _, ok := subs.subBitmap[i][element]; !ok {
-			subs.subBitmap[i][element] = make(map[string]bool)
+func match(route []string, topic []string) bool {
+	if len(route) == 0 {
+		if len(topic) == 0 {
+			return true
 		}
-		subs.subBitmap[i][element][subscription] = true
+		return false
+	}
+
+	if len(topic) == 0 {
+		if route[0] == "#" {
+			return true
+		}
+		return false
+	}
+
+	if route[0] == "#" {
+		return true
+	}
+
+	if (route[0] == "+") || (route[0] == topic[0]) {
+		return match(route[1:], topic[1:])
+	}
+
+	return false
+}
+
+func (h *Hrotti) FindRetained(id string, topic string, qos byte) {
+	var deliverList []*PublishPacket
+	client := h.getClient(id)
+	if strings.ContainsAny(topic, "#+") {
+		for rTopic, msg := range h.subs.retained {
+			if match(strings.Split(topic, "/"), strings.Split(rTopic, "/")) {
+				deliveryMsg := msg.Copy()
+				deliveryMsg.Qos = calcMinQos(msg.Qos, qos)
+				deliverList = append(deliverList, deliveryMsg)
+			}
+		}
+	} else {
+		if msg, ok := h.subs.retained[topic]; ok {
+			deliveryMsg := msg.Copy()
+			deliveryMsg.Qos = calcMinQos(msg.Qos, qos)
+			deliverList = append(deliverList, deliveryMsg)
+		}
+	}
+	if len(deliverList) > 0 {
+		for _, msg := range deliverList {
+			if msg.Qos > 0 {
+				if client.Connected() {
+					h.PersistStore.Add(id, OUTBOUND, msg)
+					select {
+					case client.outboundMessages <- msg:
+					default:
+					}
+				} else {
+					h.PersistStore.Add(id, OUTBOUND, msg)
+				}
+			} else if client.Connected() {
+				select {
+				case client.outboundMessages <- msg:
+				default:
+				}
+			}
+		}
 	}
 }
 
-func DeleteSub(client *Client, subscription string) {
-	subs.Lock()
-	defer subs.Unlock()
-	if _, ok := subs.subMap[subscription]; ok {
-		delete(subs.subMap[subscription], client)
+func (h *Hrotti) AddSub(client string, subscription string, qos byte) {
+	h.subs.Lock()
+	defer h.subs.Unlock()
+	if _, ok := h.subs.subElements[subscription]; !ok {
+		h.subs.subElements[subscription] = strings.Split(subscription, "/")
+	}
+	if _, ok := h.subs.subMap[subscription]; !ok {
+		h.subs.subMap[subscription] = make(map[string]byte)
+	}
+	h.subs.subMap[subscription][client] = qos
+	for i, element := range append(h.subs.subElements[subscription], "\u0000") {
+		if _, ok := h.subs.subBitmap[i][element]; !ok {
+			h.subs.subBitmap[i][element] = make(map[string]bool)
+		}
+		h.subs.subBitmap[i][element][subscription] = true
+	}
+	go h.FindRetained(client, subscription, qos)
+}
+
+func (h *Hrotti) DeleteSub(client string, subscription string) {
+	h.subs.Lock()
+	defer h.subs.Unlock()
+	if _, ok := h.subs.subMap[subscription]; ok {
+		delete(h.subs.subMap[subscription], client)
 	}
 }
 
-func DeliverMessage(topic string, message *PublishPacket, hrotti *Hrotti) {
-	subs.RLock()
+func (h *Hrotti) DeleteSubAll(client string) {
+	h.subs.Lock()
+	defer h.subs.Unlock()
+	for _, topic := range h.subs.subMap {
+		if _, ok := topic[client]; ok {
+			delete(topic, client)
+		}
+	}
+}
+
+func (h *Hrotti) DeliverMessage(topic string, message *PublishPacket) {
+	h.subs.RLock()
 	topicElements := strings.Split(topic, "/")
 	var matches []string
 	var hashMatches []string
-	deliverList := make(map[*Client]byte)
+	deliverList := make(map[string]byte)
 	for i, element := range append(topicElements, "\u0000") {
 		DEBUG.Println("Searching bitmap level", i, element)
 		switch i {
 		case 0:
-			for sub, _ := range subs.subBitmap[i][element] {
+			for sub, _ := range h.subs.subBitmap[i][element] {
 				matches = append(matches, sub)
 			}
-			for sub, _ := range subs.subBitmap[i]["+"] {
+			for sub, _ := range h.subs.subBitmap[i]["+"] {
 				matches = append(matches, sub)
 			}
-			for sub, _ := range subs.subBitmap[i]["#"] {
+			for sub, _ := range h.subs.subBitmap[i]["#"] {
 				hashMatches = append(hashMatches, sub)
 			}
 		default:
@@ -91,13 +167,13 @@ func DeliverMessage(topic string, message *PublishPacket, hrotti *Hrotti) {
 			for _, sub := range matches {
 				switch element {
 				case "\u0000":
-					if subs.subBitmap[i][element][sub] {
+					if h.subs.subBitmap[i][element][sub] {
 						tmpMatches = append(tmpMatches, sub)
 					}
 				default:
-					if subs.subBitmap[i][element][sub] || subs.subBitmap[i]["+"][sub] {
+					if h.subs.subBitmap[i][element][sub] || h.subs.subBitmap[i]["+"][sub] {
 						tmpMatches = append(tmpMatches, sub)
-					} else if subs.subBitmap[i]["#"][sub] {
+					} else if h.subs.subBitmap[i]["#"][sub] {
 						hashMatches = append(hashMatches, sub)
 					}
 				}
@@ -108,13 +184,13 @@ func DeliverMessage(topic string, message *PublishPacket, hrotti *Hrotti) {
 			break
 		}
 	}
-	subs.RUnlock()
+	h.subs.RUnlock()
 
 	zeroCopy := message.Copy()
 	zeroCopy.Qos = 0
 
 	for _, sub := range append(hashMatches, matches...) {
-		for c, qos := range subs.subMap[sub] {
+		for c, qos := range h.subs.subMap[sub] {
 			if currQos, ok := deliverList[c]; ok {
 				deliverList[c] = calcMinQos(calcMaxQos(currQos, qos), message.Qos)
 			} else {
@@ -123,20 +199,22 @@ func DeliverMessage(topic string, message *PublishPacket, hrotti *Hrotti) {
 		}
 	}
 
-	for client, subQos := range deliverList {
+	DEBUG.Println(deliverList)
+	for cid, subQos := range deliverList {
+		client := h.getClient(cid)
 		if subQos > 0 {
-			go func(client *Client, subQos byte) {
+			go func(c *Client, subQos byte) {
 				deliveryMessage := message.Copy()
 				deliveryMessage.Qos = subQos
-				if client.Connected() {
-					deliveryMessage.MessageID = client.getMsgID(deliveryMessage.UUID)
-					hrotti.PersistStore.Add(client, OUTBOUND, deliveryMessage)
+				if c.Connected() {
+					//deliveryMessage.MessageID = c.getMsgID(deliveryMessage.UUID())
+					h.PersistStore.Add(c.clientID, OUTBOUND, deliveryMessage)
 					select {
-					case client.outboundMessages <- deliveryMessage:
+					case c.outboundMessages <- deliveryMessage:
 					default:
 					}
 				} else {
-					hrotti.PersistStore.Add(client, OUTBOUND, deliveryMessage)
+					h.PersistStore.Add(c.clientID, OUTBOUND, deliveryMessage)
 				}
 			}(client, subQos)
 		} else if client.Connected() {

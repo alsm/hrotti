@@ -13,7 +13,7 @@ type ConnackPacket struct {
 	FixedHeader
 	TopicNameCompression byte
 	ReturnCode           byte
-	UUID                 uuid.UUID
+	uuid                 uuid.UUID
 }
 
 func (ca *ConnackPacket) String() string {
@@ -43,4 +43,8 @@ func (ca *ConnackPacket) Unpack(b io.Reader) {
 
 func (ca *ConnackPacket) Details() Details {
 	return Details{Qos: 0, MessageID: 0}
+}
+
+func (ca *ConnackPacket) UUID() uuid.UUID {
+	return ca.uuid
 }

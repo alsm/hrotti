@@ -27,7 +27,7 @@ type ConnectPacket struct {
 	WillMessage      []byte
 	Username         string
 	Password         []byte
-	UUID             uuid.UUID
+	uuid             uuid.UUID
 }
 
 func (c *ConnectPacket) String() string {
@@ -112,4 +112,8 @@ func (c *ConnectPacket) Validate() byte {
 
 func (c *ConnectPacket) Details() Details {
 	return Details{Qos: 0, MessageID: 0}
+}
+
+func (c *ConnectPacket) UUID() uuid.UUID {
+	return c.uuid
 }

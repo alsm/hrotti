@@ -14,7 +14,7 @@ type SubscribePacket struct {
 	MessageID uint16
 	Topics    []string
 	Qoss      []byte
-	UUID      uuid.UUID
+	uuid      uuid.UUID
 }
 
 func (s *SubscribePacket) String() string {
@@ -54,4 +54,8 @@ func (s *SubscribePacket) Unpack(b io.Reader) {
 
 func (s *SubscribePacket) Details() Details {
 	return Details{Qos: 1, MessageID: s.MessageID}
+}
+
+func (s *SubscribePacket) UUID() uuid.UUID {
+	return s.uuid
 }

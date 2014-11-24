@@ -10,7 +10,7 @@ import (
 
 type DisconnectPacket struct {
 	FixedHeader
-	UUID uuid.UUID
+	uuid uuid.UUID
 }
 
 func (d *DisconnectPacket) String() string {
@@ -30,4 +30,8 @@ func (d *DisconnectPacket) Unpack(b io.Reader) {
 
 func (d *DisconnectPacket) Details() Details {
 	return Details{Qos: 0, MessageID: 0}
+}
+
+func (d *DisconnectPacket) UUID() uuid.UUID {
+	return d.uuid
 }

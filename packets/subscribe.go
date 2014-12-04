@@ -48,7 +48,7 @@ func (s *SubscribePacket) Unpack(b io.Reader) {
 		s.Topics = append(s.Topics, topic)
 		qos := decodeByte(b)
 		s.Qoss = append(s.Qoss, qos)
-		payloadLength -= len(topic) + 1
+		payloadLength -= 2 + len(topic) + 1 //2 bytes of string length, plus string, plus 1 byte for Qos
 	}
 }
 

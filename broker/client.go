@@ -255,6 +255,10 @@ func (c *Client) Receive(hrotti *Hrotti) {
 				go c.Stop(true, hrotti)
 				return
 			}
+
+			// reset the keep alive timer.
+			c.ResetTimer()
+
 			switch cp.(type) {
 			//a second CONNECT packet is a protocol violation, so Stop (send will) and return.
 			case *ConnectPacket:

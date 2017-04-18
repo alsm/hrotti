@@ -2,13 +2,12 @@ package hrotti
 
 import (
 	//"errors"
-	"code.google.com/p/go-uuid/uuid"
 	. "github.com/alsm/hrotti/packets"
+	"github.com/google/uuid"
 	//"io"
 	"net"
 	"sync"
 	"time"
-
 	// Plugins currently don't work (they create a cycle). We could break the cycle
 	// by fudging things through main.go, but I think the real solution is to use RPC
 	// and run plugins in a separate process
@@ -44,7 +43,7 @@ func newClient(conn net.Conn, clientID string, maxQDepth int) *Client {
 		stopOnce:         new(sync.Once),
 		messageIDs: messageIDs{
 			//idChan: make(chan uint16, 10),
-			index: make(map[uint16]uuid.UUID),
+			index: make(map[uint16]*uuid.UUID),
 		},
 	}
 }
@@ -62,7 +61,8 @@ func (c *Client) KeepAliveTimer(hrotti *Hrotti) {
 		//this select will block on all 3 cases until one of them is ready
 		select {
 		//if we get a value in on the resetTimer channel we drop out, stop the Timer then loop round again
-		case _ = <-c.resetTimer:
+		case <-c.resetTimer:
+			DEBUG.Println(c.clientID, "resetting keepalive timer")
 		//if the timer triggers then the client has failed to send us a packet in the keepAlive period so
 		//must be disconnected, we call Stop() and the function returns.
 		case <-t.C:

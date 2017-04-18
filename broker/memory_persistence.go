@@ -1,8 +1,8 @@
 package hrotti
 
 import (
-	"code.google.com/p/go-uuid/uuid"
 	. "github.com/alsm/hrotti/packets"
+	"github.com/google/uuid"
 	"sync"
 )
 

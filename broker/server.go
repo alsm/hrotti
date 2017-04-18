@@ -7,9 +7,9 @@ import (
 	"net/url"
 	"sync"
 
-	"code.google.com/p/go-uuid/uuid"
-	"code.google.com/p/go.net/websocket"
 	. "github.com/alsm/hrotti/packets"
+	"github.com/google/uuid"
+	"golang.org/x/net/websocket"
 )
 
 type Hrotti struct {
@@ -193,7 +193,7 @@ func (h *Hrotti) InitClient(conn net.Conn) {
 	//check for a zero length client id and if it exists create one from the UUID library and return
 	//it on $SYS/session_identifier
 	if len(cp.ClientIdentifier) == 0 {
-		cp.ClientIdentifier = uuid.New()
+		cp.ClientIdentifier = uuid.New().String()
 		sendSessionID = true
 	}
 	//Lock the clients hashmap while we check if we already know this clientid.

@@ -1,14 +1,14 @@
 package hrotti
 
 import (
-	"code.google.com/p/go-uuid/uuid"
+	"github.com/google/uuid"
 	"sync"
 )
 
 type messageIDs struct {
 	sync.RWMutex
 	//idChan chan uint16
-	index map[uint16]uuid.UUID
+	index map[uint16]*uuid.UUID
 }
 
 const (
@@ -41,7 +41,7 @@ func (m *messageIDs) getMsgID(id uuid.UUID) uint16 {
 	defer m.Unlock()
 	for i := msgIDMin; i < msgIDMax; i++ {
 		if m.index[i] == nil {
-			m.index[i] = id
+			m.index[i] = &id
 			return i
 		}
 	}

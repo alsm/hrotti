@@ -10,6 +10,7 @@ import (
 	. "github.com/alsm/hrotti/packets"
 	"github.com/google/uuid"
 	"golang.org/x/net/websocket"
+	"fmt"
 )
 
 type Hrotti struct {
@@ -175,7 +176,9 @@ func (h *Hrotti) InitClient(conn net.Conn) {
 	cp.fixedHeader = cph
 	cp.unpack(body)*/
 	rp, _ := ReadPacket(conn)
+	fmt.Println("====")
 	cp := rp.(*ConnectPacket)
+	fmt.Println("1111")
 
 	//Validate the CONNECT, check fields, values etc.
 	rc := cp.Validate()

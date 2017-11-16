@@ -142,6 +142,13 @@ func (h *Hrotti) Stop() {
 
 func (h *Hrotti) InitClient(conn net.Conn) {
 	var sendSessionID bool
+	//////////////修改///////////////////////
+	defer func() {
+		if err := recover(); err != nil {
+			ERROR.Println(err)
+		}
+	}()
+	//////////////修改///////////////////////
 	/*var cph fixedHeader
 
 	//create a bufio conn from the network connection

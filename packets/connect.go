@@ -29,7 +29,17 @@ type ConnectPacket struct {
 	Password         []byte
 	uuid             uuid.UUID
 }
+//////////////////////修改//////////////////////////
+var userName string
+var password string
+func  SetUserName(name string) {
+	userName = name
+}
 
+func SetPassWord(pwd string) {
+	password = pwd
+}
+//////////////////////修改//////////////////////////
 func (c *ConnectPacket) String() string {
 	str := fmt.Sprintf("%s\n", c.FixedHeader)
 	str += fmt.Sprintf("protocolversion: %d protocolname: %s cleansession: %t willflag: %t WillQos: %d WillRetain: %t Usernameflag: %t Passwordflag: %t keepalivetimer: %d\nclientId: %s\nwilltopic: %s\nwillmessage: %s\nUsername: %s\nPassword: %s\n", c.ProtocolVersion, c.ProtocolName, c.CleanSession, c.WillFlag, c.WillQos, c.WillRetain, c.UsernameFlag, c.PasswordFlag, c.KeepaliveTimer, c.ClientIdentifier, c.WillTopic, c.WillMessage, c.Username, c.Password)
@@ -89,6 +99,11 @@ func (c *ConnectPacket) Unpack(b io.Reader) {
 }
 
 func (c *ConnectPacket) Validate() byte {
+	//////////////////////修改//////////////////////////
+	if string(c.Password) != userName || c.Username != password{
+		return CONN_REF_BAD_USER_PASS
+	}
+	//////////////////////修改//////////////////////////
 	if c.PasswordFlag && !c.UsernameFlag {
 		return CONN_REF_BAD_USER_PASS
 	}

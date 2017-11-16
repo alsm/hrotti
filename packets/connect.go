@@ -100,7 +100,7 @@ func (c *ConnectPacket) Unpack(b io.Reader) {
 
 func (c *ConnectPacket) Validate() byte {
 	//////////////////////修改//////////////////////////
-	if string(c.Password) != userName || c.Username != password{
+	if string(c.Password) != password || c.Username != userName{
 		return CONN_REF_BAD_USER_PASS
 	}
 	//////////////////////修改//////////////////////////

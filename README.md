@@ -22,7 +22,8 @@ import (
 )
 
 func main() {
-	h := hrotti.NewHrotti(100)
+	r := &hrotti.MemoryPersistence{}
+	h := hrotti.NewHrotti(100, r)
 	hrotti.INFO = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime)
 	h.AddListener("test", hrotti.NewListenerConfig("tcp://0.0.0.0:1883"))
 
